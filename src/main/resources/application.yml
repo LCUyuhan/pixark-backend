@@ -3,6 +3,10 @@ server:
   servlet:
     context-path: /api
 spring:
+  # 上传文件大小限制
+  servlet:
+    multipart:
+      max-file-size: 10MB
   application:
     name: yu-picture-backend
   # 数据库配置
@@ -32,5 +36,14 @@ knife4j:
         api-rule: package
         api-rule-resources:
           - com.yeyuchunlan.yupicturebackend.controller
+## 对象存储配置（需要从腾讯云获取）
+#cos:
+#  client:
+#    host: xxx
+#    secretId: xxx
+#    secretKey: xxx
+#    region: xxx
+#    bucket: xxx
+
 
 

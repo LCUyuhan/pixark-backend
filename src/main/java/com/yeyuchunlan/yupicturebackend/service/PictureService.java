@@ -3,6 +3,7 @@ package com.yeyuchunlan.yupicturebackend.service;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.yeyuchunlan.yupicturebackend.model.dto.picture.PictureQueryRequest;
+import com.yeyuchunlan.yupicturebackend.model.dto.picture.PictureReviewRequest;
 import com.yeyuchunlan.yupicturebackend.model.dto.picture.PictureUploadRequest;
 import com.yeyuchunlan.yupicturebackend.model.entity.Picture;
 import com.baomidou.mybatisplus.extension.service.IService;
@@ -23,12 +24,12 @@ public interface PictureService extends IService<Picture> {
     /**
      * 上传图片
      *
-     * @param multipartFile  文件
+     * @param inputSource  文件
      * @param pictureUploadRequest 图片上传请求
      * @param loginUser 登录用户
      * @return 上传图片结果
      */
-    PictureVO uploadPicture(MultipartFile multipartFile, PictureUploadRequest pictureUploadRequest, User loginUser);
+    PictureVO uploadPicture(Object inputSource, PictureUploadRequest pictureUploadRequest, User loginUser);
 
     /**
      * 将查询请求封装成QueryWrapper查询条件
@@ -66,4 +67,21 @@ public interface PictureService extends IService<Picture> {
      * @param picture 图片
      */
     void validPicture(Picture picture);
+
+
+    /**
+     * 图片审核
+     *
+     * @param pictureReviewRequest 图片审核请求
+     * @param loginUser 登录用户
+     */
+    void doPictureReview(PictureReviewRequest pictureReviewRequest, User loginUser);
+
+    /**
+     * 填充审核参数
+     *
+     * @param picture 图片
+     * @param loginUser 登录用户
+     */
+    void fillReviewParams(Picture picture, User loginUser);
 }

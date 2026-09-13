@@ -38,10 +38,7 @@ import org.springframework.web.multipart.MultipartFile;
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
-import java.util.Date;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -366,6 +363,9 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
         }
         //Elements imgElementList = div.select("img.mimg");
         Elements imgElementList = div.select(".iusc");  // 修改选择器，获取包含完整数据的元素
+        // 将 Elements 转为 List 并打乱顺序，避免每次抓取结果相同
+        List<Element> imgList = new java.util.ArrayList<>(imgElementList);
+        Collections.shuffle(imgList);
         int uploadCount = 0;
         for (Element imgElement : imgElementList) {
             //String fileUrl = imgElement.attr("src");

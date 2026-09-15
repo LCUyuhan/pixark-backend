@@ -3,6 +3,11 @@ server:
   servlet:
     context-path: /api
 spring:
+  # session 配置
+  session:
+    store-type: redis
+    # session 30 天过期
+    timeout: 2592000
   # 上传文件大小限制
   servlet:
     multipart:

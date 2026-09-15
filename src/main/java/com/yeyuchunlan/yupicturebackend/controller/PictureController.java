@@ -98,6 +98,8 @@ public class PictureController {
         // 操作数据库
         boolean result = pictureService.removeById(id);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
+        // 删除记录后清理对应的图片文件（异步执行）
+        pictureService.clearPictureFile(oldPicture);
         return ResultUtils.success(true);
     }
 

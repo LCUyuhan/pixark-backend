@@ -8,9 +8,11 @@ import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.yeyuchunlan.yupicturebackend.config.CosClientConfig;
 import com.yeyuchunlan.yupicturebackend.exception.BusinessException;
 import com.yeyuchunlan.yupicturebackend.exception.ErrorCode;
 import com.yeyuchunlan.yupicturebackend.exception.ThrowUtils;
+import com.yeyuchunlan.yupicturebackend.manager.CosManager;
 import com.yeyuchunlan.yupicturebackend.manager.FileManager;
 import com.yeyuchunlan.yupicturebackend.manager.upload.PictureUploadTemplate;
 import com.yeyuchunlan.yupicturebackend.model.dto.file.UploadPictureResult;
@@ -32,6 +34,9 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -59,6 +64,14 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
     private PictureUploadTemplate filePictureUpload;
     @Resource
     private PictureUploadTemplate urlPictureUpload;
+    @Resource
+    private CosManager cosManager;
+    @Resource
+    private CosClientConfig cosClientConfig;
+    // 注入自身代理，保证类内部调用 clearPictureFile 时 @Async 依然生效
+    @Autowired
+    @Lazy
+    private PictureService self;
 
 
     /**
@@ -81,8 +94,9 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
             pictureId = pictureUploadRequest.getId();
         }
         // 如果是更新图片，需要校验图片是否存在
+        Picture oldPicture = null;
         if (pictureId != null) {
-            Picture oldPicture = this.getById(pictureId);
+            oldPicture = this.getById(pictureId);
             ThrowUtils.throwIf(oldPicture == null, ErrorCode.NOT_FOUND_ERROR, "图片不存在");
             // 仅本人或管理员可编辑
             if (!oldPicture.getUserId().equals(loginUser.getId()) && !userService.isAdmin(loginUser)) {
@@ -125,6 +139,10 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
         }
         boolean result = this.saveOrUpdate(picture);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR, "图片上传失败");
+        // 重新上传时，清理被替换掉的旧图片文件（通过自身代理调用，保证 @Async 生效）
+        if (oldPicture != null) {
+            self.clearPictureFile(oldPicture);
+        }
         return PictureVO.objToVo(picture);
     }
 
@@ -416,6 +434,43 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
         }
         return uploadCount;
     }
+
+    /**
+     * 异步清理图片文件
+     *
+     * @param oldPicture 旧图片
+     */
+    @Async
+    @Override
+    public void clearPictureFile(Picture oldPicture) {
+        // 判空，避免 url 为空时 substring 越界
+        String pictureUrl = oldPicture.getUrl();
+        if (StrUtil.isBlank(pictureUrl)) {
+            return;
+        }
+        // 判断该图片是否还被其他记录使用（此处按“记录已删除后调用”的逻辑，count > 0 即表示仍被引用）
+        long count = this.lambdaQuery()
+                .eq(Picture::getUrl, pictureUrl)
+                .count();
+        if (count > 0) {
+            return;
+        }
+        try {
+            // url 形如 host + "/" + key，删除对象需要的是纯 key（存储路径）
+            String key = pictureUrl.substring(cosClientConfig.getHost().length() + 1);
+            cosManager.deleteObject(key);
+            // 清理缩略图
+            String thumbnailUrl = oldPicture.getThumbnailUrl();
+            if (StrUtil.isNotBlank(thumbnailUrl)) {
+                String thumbnailKey = thumbnailUrl.substring(cosClientConfig.getHost().length() + 1);
+                cosManager.deleteObject(thumbnailKey);
+            }
+        } catch (Exception e) {
+            // 异步线程中的异常不会影响主流程，但必须记录，避免静默失败
+            log.error("清理图片文件失败, pictureUrl = {}", pictureUrl, e);
+        }
+    }
+
 
 }
 

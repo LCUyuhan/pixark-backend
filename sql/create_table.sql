@@ -20,7 +20,7 @@ create table if not exists user
 create table if not exists picture
 (
     id           bigint auto_increment comment 'id' primary key,
-    url          varchar(512)                       not null comment '图片 url',
+    url          varchar(1024)                      not null comment '图片 url',
     name         varchar(128)                       not null comment '图片名称',
     introduction varchar(512)                       null comment '简介',
     category     varchar(64)                        null comment '分类',
@@ -53,4 +53,8 @@ CREATE INDEX idx_reviewStatus ON picture (reviewStatus);
 ALTER TABLE picture
     -- 添加新列
     ADD COLUMN thumbnailUrl varchar(512) NULL COMMENT '缩略图 url';
+
+-- 存量库执行：url 列扩容至 1024，与 validPicture 的 url 长度校验(1024)对齐
+ALTER TABLE picture
+    MODIFY COLUMN url varchar(1024) NOT NULL COMMENT '图片 url';
 

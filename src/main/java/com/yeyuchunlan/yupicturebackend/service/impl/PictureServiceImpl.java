@@ -73,6 +73,18 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
     @Lazy
     private PictureService self;
 
+    /**
+     * 允许排序的字段白名单（请求参数值 -> 数据库列名），防止 sortField 直接拼入 SQL
+     */
+    private static final Map<String, String> ALLOW_SORT_FIELD_MAP = Map.of(
+            "createTime", "createTime",
+            "editTime", "editTime",
+            "updateTime", "updateTime",
+            "id", "id",
+            "name", "name",
+            "picSize", "picSize"
+    );
+
 
     /**
      * 上传图片
@@ -205,8 +217,9 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
                 queryWrapper.like("tags", "\"" + tag + "\"");
             }
         }
-        // 排序
-        queryWrapper.orderBy(StrUtil.isNotEmpty(sortField), sortOrder.equals("ascend"), sortField);
+        // 排序：字段经白名单校验，非法字段忽略；常量在前调用 equals 避免 sortOrder 为 null 时 NPE
+        String sortColumn = ALLOW_SORT_FIELD_MAP.get(sortField);
+        queryWrapper.orderBy(StrUtil.isNotEmpty(sortColumn), "ascend".equals(sortOrder), sortColumn);
         return queryWrapper;
     }
 
@@ -299,7 +312,13 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
             ThrowUtils.throwIf(url.length() > 1024, ErrorCode.PARAMS_ERROR, "url 过长");
         }
         if (StrUtil.isNotBlank(introduction)) {
-            ThrowUtils.throwIf(introduction.length() > 800, ErrorCode.PARAMS_ERROR, "简介过长");
+            // 与 introduction varchar(512) 列宽对齐
+            ThrowUtils.throwIf(introduction.length() > 512, ErrorCode.PARAMS_ERROR, "简介过长");
+        }
+        // tags 列为 varchar(512)，补充长度校验
+        String tags = picture.getTags();
+        if (StrUtil.isNotBlank(tags)) {
+            ThrowUtils.throwIf(tags.length() > 512, ErrorCode.PARAMS_ERROR, "标签过长");
         }
     }
 

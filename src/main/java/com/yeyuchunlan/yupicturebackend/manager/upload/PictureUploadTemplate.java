@@ -56,6 +56,14 @@ public abstract class PictureUploadTemplate {
             ProcessResults processResults = putObjectResult.getCiUploadResult().getProcessResults();
             // 原图已是 webp 时未下发压缩规则，此时 processResults 为 null，需判空
             List<CIObject> objectList = processResults == null ? null : processResults.getObjectList();
+            // 紧急修复：webp 原图未下发压缩规则，objectList 中只有缩略图。
+            // 此时原图即主图，绝不能删除 uploadPath；缩略图取 objectList.get(0)。
+            if ("webp".equalsIgnoreCase(FileUtil.getSuffix(uploadPath))
+                    && CollUtil.isNotEmpty(objectList)) {
+                UploadPictureResult result = buildResult(originFilename, file, uploadPath, imageInfo);
+                result.setThumbnailUrl(cosClientConfig.getHost() + "/" + objectList.get(0).getKey());
+                return result;
+            }
             if (CollUtil.isNotEmpty(objectList)) {
                 CIObject compressedCiObject = objectList.get(0);
                 // 缩略图默认等于压缩图

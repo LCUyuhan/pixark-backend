@@ -24,6 +24,7 @@ import javax.servlet.http.HttpServletRequest;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import static com.yeyuchunlan.yupicturebackend.constant.UserConstant.USER_LOGIN_STATE;
@@ -37,6 +38,18 @@ import static com.yeyuchunlan.yupicturebackend.constant.UserConstant.USER_LOGIN_
 @Slf4j
 public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         implements UserService {
+
+    /**
+     * 允许排序的字段白名单（请求参数值 -> 数据库列名），防止 sortField 直接拼入 SQL
+     */
+    private static final Map<String, String> ALLOW_SORT_FIELD_MAP = Map.of(
+            "createTime", "createTime",
+            "editTime", "editTime",
+            "updateTime", "updateTime",
+            "id", "id",
+            "userAccount", "userAccount",
+            "userName", "userName"
+    );
 
     /**
      * 用户注册
@@ -227,7 +240,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         queryWrapper.like(StrUtil.isNotBlank(userAccount), "userAccount", userAccount);
         queryWrapper.like(StrUtil.isNotBlank(userName), "userName", userName);
         queryWrapper.like(StrUtil.isNotBlank(userProfile), "userProfile", userProfile);
-        queryWrapper.orderBy(StrUtil.isNotEmpty(sortField), sortOrder.equals("ascend"), sortField);
+        // 排序：字段经白名单校验，非法字段忽略；常量在前调用 equals 避免 sortOrder 为 null 时 NPE
+        String sortColumn = ALLOW_SORT_FIELD_MAP.get(sortField);
+        queryWrapper.orderBy(StrUtil.isNotEmpty(sortColumn), "ascend".equals(sortOrder), sortColumn);
         return queryWrapper;
     }
 

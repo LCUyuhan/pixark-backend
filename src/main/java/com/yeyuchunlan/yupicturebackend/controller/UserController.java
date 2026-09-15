@@ -164,6 +164,7 @@ public class UserController {
     @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
     public BaseResponse<Page<UserVO>> listUserVOByPage(@RequestBody UserQueryRequest userQueryRequest) {
         ThrowUtils.throwIf(userQueryRequest == null, ErrorCode.PARAMS_ERROR);
+        userQueryRequest.normalizePage();
         long current = userQueryRequest.getCurrent();
         long pageSize = userQueryRequest.getPageSize();
         Page<User> userPage = userService.page(new Page<>(current, pageSize),

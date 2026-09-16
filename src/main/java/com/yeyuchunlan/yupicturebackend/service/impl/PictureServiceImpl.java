@@ -383,9 +383,9 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
     @Override
     public int uploadPictureByBatch(PictureUploadByBatchRequest pictureUploadByBatchRequest, User loginUser) {
         String searchText = pictureUploadByBatchRequest.getSearchText();
-        // 格式化数量
-        Integer count = pictureUploadByBatchRequest.getCount();
-        ThrowUtils.throwIf(count > 30, ErrorCode.PARAMS_ERROR, "最多 30 条");
+        // 格式化数量（count 为 null 时默认 10，并校验取值范围，避免拆箱 NPE）
+        Integer count = ObjUtil.defaultIfNull(pictureUploadByBatchRequest.getCount(), 10);
+        ThrowUtils.throwIf(count < 1 || count > 30, ErrorCode.PARAMS_ERROR, "数量需在 1~30 之间");
         // 要抓取的地址
         String fetchUrl = String.format("https://cn.bing.com/images/async?q=%s&mmasync=1", searchText);
         Document document;
@@ -405,7 +405,7 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
         List<Element> imgList = new java.util.ArrayList<>(imgElementList);
         Collections.shuffle(imgList);
         int uploadCount = 0;
-        for (Element imgElement : imgElementList) {
+        for (Element imgElement : imgList) {
             //String fileUrl = imgElement.attr("src");
             // 获取data-m属性中的JSON字符串
             String dataM = imgElement.attr("m");

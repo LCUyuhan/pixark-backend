@@ -115,8 +115,10 @@ public class PictureController {
         // 将实体类和 DTO 进行转换
         Picture picture = new Picture();
         BeanUtils.copyProperties(pictureUpdateRequest, picture);
-        // 注意将 list 转为 string
-        picture.setTags(JSONUtil.toJsonStr(pictureUpdateRequest.getTags()));
+        // 注意将 list 转为 string（tags 为 null 时不覆盖原值，避免写成字符串 "null"）
+        if (pictureUpdateRequest.getTags() != null) {
+            picture.setTags(JSONUtil.toJsonStr(pictureUpdateRequest.getTags()));
+        }
         // 数据校验
         pictureService.validPicture(picture);
         // 判断是否存在
@@ -208,8 +210,10 @@ public class PictureController {
         // 在此处将实体类和 DTO 进行转换
         Picture picture = new Picture();
         BeanUtils.copyProperties(pictureEditRequest, picture);
-        // 注意将 list 转为 string
-        picture.setTags(JSONUtil.toJsonStr(pictureEditRequest.getTags()));
+        // 注意将 list 转为 string（tags 为 null 时不覆盖原值，避免写成字符串 "null"）
+        if (pictureEditRequest.getTags() != null) {
+            picture.setTags(JSONUtil.toJsonStr(pictureEditRequest.getTags()));
+        }
         // 设置编辑时间
         picture.setEditTime(new Date());
         // 数据校验

@@ -217,8 +217,8 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
                 queryWrapper.like("tags", "\"" + tag + "\"");
             }
         }
-        // 排序：字段经白名单校验，非法字段忽略；常量在前调用 equals 避免 sortOrder 为 null 时 NPE
-        String sortColumn = ALLOW_SORT_FIELD_MAP.get(sortField);
+        // 排序：字段经白名单校验，非法字段忽略；Map.of 不允许 null 键查询，须先判空再查白名单；常量在前调用 equals 避免 sortOrder 为 null 时 NPE
+        String sortColumn = StrUtil.isNotBlank(sortField) ? ALLOW_SORT_FIELD_MAP.get(sortField) : null;
         queryWrapper.orderBy(StrUtil.isNotEmpty(sortColumn), "ascend".equals(sortOrder), sortColumn);
         return queryWrapper;
     }

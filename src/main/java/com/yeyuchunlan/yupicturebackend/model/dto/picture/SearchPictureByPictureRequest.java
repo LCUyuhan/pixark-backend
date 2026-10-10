@@ -12,5 +12,10 @@ public class SearchPictureByPictureRequest implements Serializable {
      */
     private Long pictureId;
 
+    /**
+     * 以图搜图服务商：baidu / aliyun，不传则用配置的默认服务商
+     */
+    private String provider;
+
     private static final long serialVersionUID = 1L;
 }

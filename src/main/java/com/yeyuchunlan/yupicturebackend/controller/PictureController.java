@@ -6,7 +6,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.yeyuchunlan.yupicturebackend.annotation.AuthCheck;
-import com.yeyuchunlan.yupicturebackend.api.imagesearch.ImageSearchApiFacade;
+import com.yeyuchunlan.yupicturebackend.api.imagesearch.ImageSearchSelector;
+import com.yeyuchunlan.yupicturebackend.api.imagesearch.ImageSearchService;
 import com.yeyuchunlan.yupicturebackend.api.imagesearch.model.ImageSearchResult;
 import com.yeyuchunlan.yupicturebackend.common.BaseResponse;
 import com.yeyuchunlan.yupicturebackend.common.DeleteRequest;
@@ -55,6 +56,8 @@ public class PictureController {
     private StringRedisTemplate stringRedisTemplate;
     @Resource
     private SpaceService spaceService;
+    @Resource
+    private ImageSearchSelector imageSearchSelector;
 
 
 
@@ -353,17 +356,51 @@ public class PictureController {
 
 
     /**
-     * 以图搜图
+     * 以图搜图（从全网搜索图片，暂时在个人空间调用）
      */
     @PostMapping("/search/picture")
-    public BaseResponse<List<ImageSearchResult>> searchPictureByPicture(@RequestBody SearchPictureByPictureRequest searchPictureByPictureRequest) {
+    public BaseResponse<List<ImageSearchResult>> searchPictureByPicture(@RequestBody SearchPictureByPictureRequest searchPictureByPictureRequest,
+                                                                        HttpServletRequest request) {
+        // 登录校验：任何已登录用户可调用（未登录 getLoginUser 抛 NOT_LOGIN）
+        userService.getLoginUser(request);
         ThrowUtils.throwIf(searchPictureByPictureRequest == null, ErrorCode.PARAMS_ERROR);
         Long pictureId = searchPictureByPictureRequest.getPictureId();
         ThrowUtils.throwIf(pictureId == null || pictureId <= 0, ErrorCode.PARAMS_ERROR);
         Picture oldPicture = pictureService.getById(pictureId);
         ThrowUtils.throwIf(oldPicture == null, ErrorCode.NOT_FOUND_ERROR);
-        List<ImageSearchResult> resultList = ImageSearchApiFacade.searchImage(oldPicture.getUrl());
+        ImageSearchService imageSearchService = imageSearchSelector.pick(searchPictureByPictureRequest.getProvider());
+        String thumbnailUrl = oldPicture.getThumbnailUrl();
+        String searchUrl = (thumbnailUrl != null && !thumbnailUrl.trim().isEmpty())
+                ? thumbnailUrl : oldPicture.getUrl();
+        List<ImageSearchResult> resultList = imageSearchService.search(searchUrl);
         return ResultUtils.success(resultList);
+    }
+
+    /**
+     * 颜色搜索（从个人空间搜索图片）
+     */
+    @PostMapping("/search/color")
+    public BaseResponse<List<PictureVO>> searchPictureByColor(@RequestBody SearchPictureByColorRequest searchPictureByColorRequest, HttpServletRequest request) {
+        ThrowUtils.throwIf(searchPictureByColorRequest == null, ErrorCode.PARAMS_ERROR);
+        String picColor = searchPictureByColorRequest.getPicColor();
+        Long spaceId = searchPictureByColorRequest.getSpaceId();
+        User loginUser = userService.getLoginUser(request);
+        List<PictureVO> result = pictureService.searchPictureByColor(spaceId, picColor, loginUser);
+        return ResultUtils.success(result);
+    }
+
+    /**
+     * 批量编辑图片（在个人空间中使用）
+     *
+     * @param pictureEditByBatchRequest 图片批量编辑请求
+     * @return 响应
+     */
+    @PostMapping("/edit/batch")
+    public BaseResponse<Boolean> editPictureByBatch(@RequestBody PictureEditByBatchRequest pictureEditByBatchRequest, HttpServletRequest request) {
+        ThrowUtils.throwIf(pictureEditByBatchRequest == null, ErrorCode.PARAMS_ERROR);
+        User loginUser = userService.getLoginUser(request);
+        pictureService.editPictureByBatch(pictureEditByBatchRequest, loginUser);
+        return ResultUtils.success(true);
     }
 
 }

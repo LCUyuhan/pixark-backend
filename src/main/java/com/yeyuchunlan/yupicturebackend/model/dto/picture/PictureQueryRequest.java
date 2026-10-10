@@ -1,5 +1,6 @@
 package com.yeyuchunlan.yupicturebackend.model.dto.picture;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.yeyuchunlan.yupicturebackend.common.PageRequest;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -106,11 +107,13 @@ public class PictureQueryRequest extends PageRequest implements Serializable {
     /**
      * 开始编辑时间
      */
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8")
     private Date startEditTime;
 
     /**
      * 结束编辑时间
      */
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8")
     private Date endEditTime;
 
     private static final long serialVersionUID = 1L;

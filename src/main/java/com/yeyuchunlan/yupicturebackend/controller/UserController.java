@@ -1,5 +1,6 @@
 package com.yeyuchunlan.yupicturebackend.controller;
 
+import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.yeyuchunlan.yupicturebackend.annotation.AuthCheck;
 import com.yeyuchunlan.yupicturebackend.common.BaseResponse;
@@ -150,6 +151,32 @@ public class UserController {
         }
         User user = new User();
         BeanUtils.copyProperties(userUpdateRequest, user);
+        boolean result = userService.updateById(user);
+        ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
+        return ResultUtils.success(true);
+    }
+
+    /**
+     * 编辑个人信息（登录用户修改自己的昵称 / 头像 / 简介，不能改账号、密码、角色）
+     */
+    @PostMapping("/edit")
+    public BaseResponse<Boolean> editUser(@RequestBody UserEditRequest userEditRequest, HttpServletRequest request) {
+        if (userEditRequest == null) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        String userName = userEditRequest.getUserName();
+        if (StrUtil.isNotBlank(userName) && userName.length() > 30) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "昵称过长");
+        }
+        String userProfile = userEditRequest.getUserProfile();
+        if (StrUtil.isNotBlank(userProfile) && userProfile.length() > 512) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "简介过长");
+        }
+        User loginUser = userService.getLoginUser(request);
+        User user = new User();
+        BeanUtils.copyProperties(userEditRequest, user);
+        // 强制只改登录用户自己，不信任前端传 id
+        user.setId(loginUser.getId());
         boolean result = userService.updateById(user);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
         return ResultUtils.success(true);

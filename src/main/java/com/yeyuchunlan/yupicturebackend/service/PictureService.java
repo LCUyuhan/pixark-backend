@@ -7,9 +7,11 @@ import com.yeyuchunlan.yupicturebackend.model.entity.Picture;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.yeyuchunlan.yupicturebackend.model.entity.User;
 import com.yeyuchunlan.yupicturebackend.model.vo.PictureVO;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.servlet.http.HttpServletRequest;
+import java.util.List;
 
 /**
 * @author him
@@ -127,4 +129,21 @@ public interface PictureService extends IService<Picture> {
      * @param loginUser 登录用户
      */
     void editPicture(PictureEditRequest pictureEditRequest, User loginUser);
+    /**
+     * 根据颜色搜索图片
+     * @param spaceId 空间id
+     * @param picColor 图片颜色
+     * @param loginUser 登录用户
+     * @return 图片列表
+     */
+    List<PictureVO> searchPictureByColor(Long spaceId, String picColor, User loginUser);
+
+
+    /**
+     * 批量编辑图片
+     * @param pictureEditByBatchRequest 编辑图片请求
+     * @param loginUser 登录用户
+     */
+    @Transactional(rollbackFor = Exception.class)
+    void editPictureByBatch(PictureEditByBatchRequest pictureEditByBatchRequest, User loginUser);
 }

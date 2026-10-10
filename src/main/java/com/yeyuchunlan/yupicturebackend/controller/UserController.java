@@ -1,15 +1,18 @@
 package com.yeyuchunlan.yupicturebackend.controller;
 
+import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.yeyuchunlan.yupicturebackend.annotation.AuthCheck;
 import com.yeyuchunlan.yupicturebackend.common.BaseResponse;
 import com.yeyuchunlan.yupicturebackend.common.DeleteRequest;
 import com.yeyuchunlan.yupicturebackend.common.ResultUtils;
+import com.yeyuchunlan.yupicturebackend.config.CosClientConfig;
 import com.yeyuchunlan.yupicturebackend.constant.UserConstant;
 import com.yeyuchunlan.yupicturebackend.exception.BusinessException;
 import com.yeyuchunlan.yupicturebackend.exception.ErrorCode;
 import com.yeyuchunlan.yupicturebackend.exception.ThrowUtils;
+import com.yeyuchunlan.yupicturebackend.manager.CosManager;
 import com.yeyuchunlan.yupicturebackend.model.dto.picture.PictureUploadRequest;
 import com.yeyuchunlan.yupicturebackend.model.dto.user.*;
 import com.yeyuchunlan.yupicturebackend.model.entity.User;
@@ -17,20 +20,34 @@ import com.yeyuchunlan.yupicturebackend.model.vo.LoginUserVO;
 import com.yeyuchunlan.yupicturebackend.model.vo.PictureVO;
 import com.yeyuchunlan.yupicturebackend.model.vo.UserVO;
 import com.yeyuchunlan.yupicturebackend.service.UserService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
+import java.io.File;
 import java.util.List;
+import java.util.Set;
 
+@Slf4j
 @RestController
 @RequestMapping("/user")
 public class UserController {
 
     @Resource
     private UserService userService;
+    @Resource
+    private CosManager cosManager;
+    @Resource
+    private CosClientConfig cosClientConfig;
+
+    /** 头像大小上限：2MB */
+    private static final long AVATAR_MAX_SIZE = 2 * 1024 * 1024L;
+
+    /** 头像允许的扩展名 */
+    private static final Set<String> AVATAR_ALLOWED_EXTS = Set.of("jpg", "jpeg", "png", "gif", "webp", "bmp");
 
     /**
      * 用户注册
@@ -180,6 +197,42 @@ public class UserController {
         boolean result = userService.updateById(user);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
         return ResultUtils.success(true);
+    }
+
+    /**
+     * 上传用户头像（需登录）
+     * 固定 key（avatar/{userId}.{ext}）：同一用户重复上传直接覆盖旧头像，不产生垃圾文件；
+     * 返回完整可访问 URL，前端拿到后再调 /user/edit 保存
+     */
+    @PostMapping("/avatar/upload")
+    public BaseResponse<String> uploadUserAvatar(@RequestPart("file") MultipartFile multipartFile, HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        // 文件校验
+        ThrowUtils.throwIf(multipartFile == null || multipartFile.isEmpty(), ErrorCode.PARAMS_ERROR, "文件不能为空");
+        ThrowUtils.throwIf(multipartFile.getSize() > AVATAR_MAX_SIZE, ErrorCode.PARAMS_ERROR, "头像大小不能超过 2MB");
+        String contentType = multipartFile.getContentType();
+        ThrowUtils.throwIf(StrUtil.isBlank(contentType) || !contentType.startsWith("image/"),
+                ErrorCode.PARAMS_ERROR, "仅支持上传图片文件");
+        String filename = multipartFile.getOriginalFilename();
+        String ext = StrUtil.isBlank(filename) ? "" : FileUtil.extName(filename).toLowerCase();
+        ThrowUtils.throwIf(!AVATAR_ALLOWED_EXTS.contains(ext), ErrorCode.PARAMS_ERROR, "图片格式不支持");
+        String key = String.format("avatar/%s.%s", loginUser.getId(), ext);
+        File file = null;
+        try {
+            // 上传文件
+            file = File.createTempFile("avatar_", "." + ext);
+            multipartFile.transferTo(file);
+            cosManager.putObject(key, file);
+            // 返回可访问的完整地址
+            return ResultUtils.success(cosClientConfig.getHost() + "/" + key);
+        } catch (Exception e) {
+            log.error("avatar upload error, key = {}", key, e);
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "头像上传失败");
+        } finally {
+            if (file != null && !file.delete()) {
+                log.error("temp avatar file delete error, key = {}", key);
+            }
+        }
     }
 
     /**

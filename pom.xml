@@ -94,6 +94,27 @@
             <groupId>org.springframework.session</groupId>
             <artifactId>spring-session-data-redis</artifactId>
         </dependency>
+        <!--
+            阿里云百炼 DashScope SDK（AI 图片编辑，万相通用图像编辑）。
+            版本 2.20.6 = Maven Central 当前最新；异步调用（asyncCall + fetch）要求 >= 2.20.1，已满足。
+            排除 slf4j-simple：它是 SDK 以 compile 作用域带进来的日志绑定，会与 Spring Boot 的 logback 抢绑定；
+            排除 lombok：本项目已自行声明，避免 SDK 的版本参与仲裁。
+        -->
+        <dependency>
+            <groupId>com.alibaba</groupId>
+            <artifactId>dashscope-sdk-java</artifactId>
+            <version>2.20.6</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-simple</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.projectlombok</groupId>
+                    <artifactId>lombok</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
 
 
 
@@ -114,6 +135,38 @@
                 <version>3.5.9</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+            <!--
+                spring-boot-dependencies 2.7.6 把 okhttp3 管理为 4.9.3，而 DashScope SDK 需要 4.12.0。
+                本项目以 import 方式引入 BOM（非 starter-parent），改 okhttp3.version 属性无效，
+                只能在此显式声明覆盖（本项目的 dependencyManagement 优先于 import 的 BOM）。
+                腾讯云 cos_api 用的是 Apache HttpClient，不受 okhttp 版本影响。
+            -->
+            <dependency>
+                <groupId>com.squareup.okhttp3</groupId>
+                <artifactId>okhttp</artifactId>
+                <version>4.12.0</version>
+            </dependency>
+            <dependency>
+                <groupId>com.squareup.okhttp3</groupId>
+                <artifactId>okhttp-sse</artifactId>
+                <version>4.12.0</version>
+            </dependency>
+            <dependency>
+                <groupId>com.squareup.okhttp3</groupId>
+                <artifactId>logging-interceptor</artifactId>
+                <version>4.12.0</version>
+            </dependency>
+            <!-- okhttp 4.12.0 需要 Kotlin 1.8+ 运行时，Boot 管理的 1.6.21 偏低，一并覆盖 -->
+            <dependency>
+                <groupId>org.jetbrains.kotlin</groupId>
+                <artifactId>kotlin-stdlib</artifactId>
+                <version>1.9.25</version>
+            </dependency>
+            <dependency>
+                <groupId>org.jetbrains.kotlin</groupId>
+                <artifactId>kotlin-stdlib-jdk8</artifactId>
+                <version>1.9.25</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

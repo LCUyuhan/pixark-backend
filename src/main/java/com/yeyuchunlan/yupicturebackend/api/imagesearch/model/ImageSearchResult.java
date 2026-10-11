@@ -18,7 +18,7 @@ public class ImageSearchResult {
     private String imageUrl;
 
     /**
-     * 图片来源页地址，前端可点击跳转（可能为 null，如阿里云未返回来源页）。
+     * 图片来源页地址，前端可点击跳转（供应商未返回时可能为 null）。
      * @Alias 用于百度原始 JSON 的反序列化映射（百度字段名为 fromUrl）。
      */
     @Alias("fromUrl")

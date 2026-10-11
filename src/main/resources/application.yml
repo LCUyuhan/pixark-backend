@@ -56,15 +56,32 @@ knife4j:
 #    region: xxx
 #    bucket: xxx
 
-## 以图搜图配置（未配置时默认 provider=baidu，仅走百度逆向）
-## 接入阿里云百炼时取消注释并填入实际值；apiKey 建议通过环境变量 DASHSCOPE_API_KEY 注入
+## 以图搜图配置（只剩百度逆向一条链路；provider 留空即用这里的默认值）
 #image-search:
 #  default-provider: baidu
-#  aliyun:
-#    api-key: ${DASHSCOPE_API_KEY:}
-#    workspace-id: xxx
-#    model: xxx   # 请从百炼控制台确认可用模型名，勿硬套示例
-#    endpoint: https://{workspaceId}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/responses
+
+## AI 图片编辑配置（阿里云百炼 万相通用图像编辑，仅华北2北京地域）
+## 百炼密钥只服务这一个功能，直接配在本段下；建议用环境变量 DASHSCOPE_API_KEY 注入
+#ai-image-edit:
+#  enabled: true
+#  api-key: ${DASHSCOPE_API_KEY:}
+#  workspace-id: xxx
+#  base-url: https://{workspaceId}.cn-beijing.maas.aliyuncs.com
+#  model: wanx2.1-imageedit
+#  allowed-functions:            # 逗号分隔或列表，可选值见 AiImageEditFunctionEnum（共 10 个功能）
+#    - expand
+#    - remove_watermark
+#    - super_resolution
+#    - colorization
+#    - doodle
+#    - stylization_all
+#    - stylization_local
+#    - description_edit
+#    - description_edit_with_mask
+#    - control_cartoon_feature
+#  watermark: false             # 是否在生成图右下角加「AI生成」标识，对外提供服务时建议开启
+#  daily-quota-per-user: 20
+#  task-ttl-hours: 23               # 必须 <= 24，百炼任务与结果 URL 只保留 24 小时
 
 
 

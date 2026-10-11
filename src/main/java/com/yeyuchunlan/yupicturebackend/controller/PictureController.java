@@ -1,6 +1,7 @@
 package com.yeyuchunlan.yupicturebackend.controller;
 
 import cn.hutool.core.util.RandomUtil;
+import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.github.benmanes.caffeine.cache.Cache;
@@ -21,8 +22,13 @@ import com.yeyuchunlan.yupicturebackend.model.entity.Picture;
 import com.yeyuchunlan.yupicturebackend.model.entity.Space;
 import com.yeyuchunlan.yupicturebackend.model.entity.User;
 import com.yeyuchunlan.yupicturebackend.model.enums.PictureReviewStatusEnum;
+import com.yeyuchunlan.yupicturebackend.model.vo.AiImageEditBaseImageVO;
+import com.yeyuchunlan.yupicturebackend.model.vo.AiImageEditQuotaVO;
+import com.yeyuchunlan.yupicturebackend.model.vo.AiImageEditStyleVO;
+import com.yeyuchunlan.yupicturebackend.model.vo.AiImageEditTaskVO;
 import com.yeyuchunlan.yupicturebackend.model.vo.PictureTagCategory;
 import com.yeyuchunlan.yupicturebackend.model.vo.PictureVO;
+import com.yeyuchunlan.yupicturebackend.service.AiImageEditService;
 import com.yeyuchunlan.yupicturebackend.service.PictureService;
 import com.yeyuchunlan.yupicturebackend.service.SpaceService;
 import com.yeyuchunlan.yupicturebackend.service.UserService;
@@ -58,6 +64,9 @@ public class PictureController {
     private SpaceService spaceService;
     @Resource
     private ImageSearchSelector imageSearchSelector;
+
+    @Resource
+    private AiImageEditService aiImageEditService;
 
 
 
@@ -402,5 +411,75 @@ public class PictureController {
         pictureService.editPictureByBatch(pictureEditByBatchRequest, loginUser);
         return ResultUtils.success(true);
     }
+
+    // region AI 图片编辑
+
+    /**
+     * 创建 AI 图片编辑任务（接口只支持异步，需轮询查询接口获取结果）
+     */
+    @PostMapping("/ai/edit/create_task")
+    public BaseResponse<AiImageEditTaskVO> createAiImageEditTask(@RequestBody AiImageEditCreateRequest aiImageEditCreateRequest,
+                                                                 HttpServletRequest request) {
+        ThrowUtils.throwIf(aiImageEditCreateRequest == null, ErrorCode.PARAMS_ERROR);
+        User loginUser = userService.getLoginUser(request);
+        AiImageEditTaskVO taskVO = aiImageEditService.createTask(aiImageEditCreateRequest, loginUser);
+        return ResultUtils.success(taskVO);
+    }
+
+    /**
+     * 查询 AI 图片编辑任务，仅任务提交人可查；返回的图片地址 24 小时后失效
+     */
+    @GetMapping("/ai/edit/get_task")
+    public BaseResponse<AiImageEditTaskVO> getAiImageEditTask(String taskId, HttpServletRequest request) {
+        ThrowUtils.throwIf(StrUtil.isBlank(taskId), ErrorCode.PARAMS_ERROR, "任务 id 不能为空");
+        User loginUser = userService.getLoginUser(request);
+        AiImageEditTaskVO taskVO = aiImageEditService.getTask(taskId, loginUser);
+        return ResultUtils.success(taskVO);
+    }
+
+    /**
+     * 保存 AI 图片编辑结果，replace 为 true 时覆盖原图（原图文件会被删除）
+     */
+    @PostMapping("/ai/edit/save")
+    public BaseResponse<PictureVO> saveAiImageEditResult(@RequestBody AiImageEditSaveRequest aiImageEditSaveRequest,
+                                                         HttpServletRequest request) {
+        ThrowUtils.throwIf(aiImageEditSaveRequest == null, ErrorCode.PARAMS_ERROR);
+        User loginUser = userService.getLoginUser(request);
+        PictureVO pictureVO = aiImageEditService.saveTaskResult(aiImageEditSaveRequest, loginUser);
+        return ResultUtils.success(pictureVO);
+    }
+
+    /**
+     * 查询风格化功能的预设风格清单（仅返回已开放的功能）
+     */
+    @GetMapping("/ai/edit/styles")
+    public BaseResponse<List<AiImageEditStyleVO>> listAiImageEditStyles(String function, HttpServletRequest request) {
+        userService.getLoginUser(request);
+        List<AiImageEditStyleVO> styleList = aiImageEditService.listStyles(function);
+        return ResultUtils.success(styleList);
+    }
+
+    /**
+     * 查询当前用户的 AI 编辑额度余量（打开 AI 编辑弹窗时调用）
+     */
+    @GetMapping("/ai/edit/quota")
+    public BaseResponse<AiImageEditQuotaVO> getAiImageEditQuota(HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        AiImageEditQuotaVO quotaVO = aiImageEditService.getQuota(loginUser);
+        return ResultUtils.success(quotaVO);
+    }
+
+    /**
+     * 取原图的 base64 底图，供前端本地画布绘制涂抹蒙版（只读，不消耗日额度）
+     */
+    @GetMapping("/ai/edit/base_image")
+    public BaseResponse<AiImageEditBaseImageVO> getAiImageEditBaseImage(Long pictureId, HttpServletRequest request) {
+        ThrowUtils.throwIf(pictureId == null || pictureId <= 0, ErrorCode.PARAMS_ERROR, "图片 id 不合法");
+        User loginUser = userService.getLoginUser(request);
+        AiImageEditBaseImageVO baseImageVO = aiImageEditService.getBaseImage(pictureId, loginUser);
+        return ResultUtils.success(baseImageVO);
+    }
+
+    // endregion
 
 }

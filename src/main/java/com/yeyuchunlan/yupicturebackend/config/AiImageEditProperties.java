@@ -54,9 +54,10 @@ public class AiImageEditProperties {
     private boolean watermark = false;
 
     /**
-     * 单用户每日可提交的编辑任务数，用于兜住免费额度用尽后自动转按量付费的成本
+     * 单用户每分钟最多可提交的任务数，防止脚本在一分钟内打光余额、也避免撞上模型服务自身的 QPS 限制。
+     * 配成 0 或负数表示不限流
      */
-    private int dailyQuotaPerUser = 20;
+    private int submitRatePerMinute = 3;
 
     /**
      * 任务记录在 Redis 中的存活小时数。必须小于等于 24，百炼的 task_id 与结果图片 URL 均只保留 24 小时

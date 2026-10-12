@@ -136,6 +136,8 @@ public class UserController {
 
     /**
      * 根据 id 获取脱敏后的用户信息
+     * 注意：本方法未加鉴权。内部调用的 getUserById 虽标了 @AuthCheck(ADMIN)，但自调用走不到 AOP 代理，
+     * 那道注解在这里不生效
      */
     @GetMapping("/get/vo")
     public BaseResponse<UserVO> getUserVOById(long id) {

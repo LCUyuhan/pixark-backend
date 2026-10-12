@@ -43,6 +43,11 @@ public class UserVO implements Serializable {
     private String userRole;
 
     /**
+     * AI 图片编辑剩余额度（次数），供管理员在用户管理里查看与发放
+     */
+    private Integer aiQuota;
+
+    /**
      * 创建时间
      */
     private Date createTime;

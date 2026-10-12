@@ -1,11 +1,11 @@
 package com.yeyuchunlan.yupicturebackend.service.impl;
 
-import cn.hutool.core.date.DateUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.http.HttpRequest;
 import cn.hutool.http.HttpResponse;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.yeyuchunlan.yupicturebackend.api.aiimageedit.AliyunImageEditApi;
 import com.yeyuchunlan.yupicturebackend.api.aiimageedit.model.AiEditCreateTaskResult;
 import com.yeyuchunlan.yupicturebackend.api.aiimageedit.model.AiEditQueryTaskResult;
@@ -29,6 +29,7 @@ import com.yeyuchunlan.yupicturebackend.model.vo.AiImageEditTaskVO;
 import com.yeyuchunlan.yupicturebackend.model.vo.PictureVO;
 import com.yeyuchunlan.yupicturebackend.service.AiImageEditService;
 import com.yeyuchunlan.yupicturebackend.service.PictureService;
+import com.yeyuchunlan.yupicturebackend.service.UserService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -38,7 +39,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -46,8 +46,8 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * AI 图片编辑服务实现。
- * 链路：校验图片与权限 -> 占用日额度 -> 下发百炼异步任务 -> 记录任务归属 -> 前端轮询 -> 服务端取回结果并复用上传链路入库。
- * 任务归属与额度都放在 Redis（登录态本身也存在 Redis），不新增任务表。
+ * 链路：校验图片与权限 -> 频率与额度校验 -> 下发百炼异步任务 -> 记录任务归属 -> 前端轮询 -> 服务端取回结果并复用上传链路入库。
+ * 额度是持久权益，存 user.aiQuota（管理员发放，用完找管理员加）；任务归属是 24 小时就作废的临时数据，存 Redis。
  */
 @Slf4j
 @Service
@@ -59,9 +59,14 @@ public class AiImageEditServiceImpl implements AiImageEditService {
     private static final String TASK_KEY_PREFIX = "yupicture:aiEdit:task:";
 
     /**
-     * 单用户当日已提交任务数
+     * 提交频率计数，按分钟分桶：{userId}:{分钟序号}
      */
-    private static final String QUOTA_KEY_PREFIX = "yupicture:aiEdit:quota:";
+    private static final String RATE_KEY_PREFIX = "yupicture:aiEdit:rate:";
+
+    /**
+     * 任务失败已退还额度的标记位后缀，保证反复轮询同一个失败任务只退一次
+     */
+    private static final String REFUNDED_KEY_SUFFIX = ":refunded";
 
     /**
      * 百炼侧 task_id 与结果图片 URL 的最长保留时间
@@ -121,6 +126,9 @@ public class AiImageEditServiceImpl implements AiImageEditService {
     private PictureService pictureService;
 
     @Resource
+    private UserService userService;
+
+    @Resource
     private StringRedisTemplate stringRedisTemplate;
 
     @Override
@@ -165,9 +173,10 @@ public class AiImageEditServiceImpl implements AiImageEditService {
         // 6. 组装功能参数
         Map<String, Object> parameters = buildParameters(functionEnum, aiImageEditCreateRequest);
 
-        // 7. 先占额度再下发，下发失败退还
-        String quotaKey = buildQuotaKey(loginUser.getId());
-        increaseQuota(quotaKey);
+        // 7. 先拦频率（不消耗额度），再原子扣减余额；下发失败退还
+        Long userId = loginUser.getId();
+        checkSubmitRate(userId);
+        deductQuota(userId);
         try {
             AliyunImageEditRequest apiRequest = new AliyunImageEditRequest();
             apiRequest.setFunction(functionEnum.getValue());
@@ -189,7 +198,7 @@ public class AiImageEditServiceImpl implements AiImageEditService {
                     Duration.ofHours(Math.min(aiImageEditProperties.getTaskTtlHours(), ALIYUN_RESULT_KEEP_HOURS)));
             return toTaskVO(createResult.getTaskId(), createResult.getTaskStatus(), null, null);
         } catch (RuntimeException e) {
-            refundQuota(quotaKey);
+            refundQuota(userId);
             throw e;
         }
     }
@@ -218,6 +227,8 @@ public class AiImageEditServiceImpl implements AiImageEditService {
             rewriteTaskRecord(taskId, record);
         } else if (taskLevelFailure) {
             failReason = toUserMessage(queryResult.getCode(), queryResult.getMessage());
+            // 任务级失败不产生费用，把占用的额度退回去；标记位保证反复轮询同一个失败任务只退一次
+            refundQuotaOnce(taskId, loginUser.getId());
         } else if (StrUtil.isNotBlank(queryResult.getFailReason())) {
             // 任务成功但个别图片失败
             failReason = queryResult.getFailReason();
@@ -240,6 +251,10 @@ public class AiImageEditServiceImpl implements AiImageEditService {
             AiImageEditTaskStatusEnum statusEnum = AiImageEditTaskStatusEnum.getEnumByValue(queryResult.getTaskStatus());
             boolean taskLevelFailure = statusEnum == AiImageEditTaskStatusEnum.FAILED
                     || statusEnum == AiImageEditTaskStatusEnum.CANCELED;
+            if (taskLevelFailure) {
+                // 用户不轮询直接点保存时，这是退还额度的唯一机会
+                refundQuotaOnce(taskId, loginUser.getId());
+            }
             if (taskLevelFailure || StrUtil.isNotBlank(queryResult.getCode())) {
                 throw new BusinessException(ErrorCode.OPERATION_ERROR,
                         toUserMessage(queryResult.getCode(), queryResult.getMessage()));
@@ -296,12 +311,11 @@ public class AiImageEditServiceImpl implements AiImageEditService {
     @Override
     public AiImageEditQuotaVO getQuota(User loginUser) {
         ThrowUtils.throwIf(loginUser == null, ErrorCode.NO_AUTH_ERROR);
-        int limit = aiImageEditProperties.getDailyQuotaPerUser();
-        String used = stringRedisTemplate.opsForValue().get(buildQuotaKey(loginUser.getId()));
-        long usedCount = StrUtil.isNumeric(used) ? Long.parseLong(used) : 0L;
+        // 必须回表查：登录态里的 User 是登录那一刻的快照，管理员刚发放的额度不会自动出现在里面
+        User current = userService.getById(loginUser.getId());
+        ThrowUtils.throwIf(current == null, ErrorCode.NOT_FOUND_ERROR, "用户不存在");
         AiImageEditQuotaVO vo = new AiImageEditQuotaVO();
-        vo.setDailyLimit(limit);
-        vo.setRemaining((int) Math.max(0, limit - usedCount));
+        vo.setRemaining(current.getAiQuota() == null ? 0 : current.getAiQuota());
         return vo;
     }
 
@@ -501,7 +515,7 @@ public class AiImageEditServiceImpl implements AiImageEditService {
 
     // endregion
 
-    // region Redis 任务记录与日额度
+    // region Redis 任务记录、提交限流与额度扣减
 
     /**
      * 读取任务记录并校验归属：任务 id 虽然是随机 uuid，但越权拿别人的生成结果仍然不该被允许
@@ -527,33 +541,60 @@ public class AiImageEditServiceImpl implements AiImageEditService {
         stringRedisTemplate.opsForValue().set(key, record.toString(), ttl);
     }
 
-    private String buildQuotaKey(Long userId) {
-        return QUOTA_KEY_PREFIX + userId + ":" + DateUtil.format(new Date(), "yyyyMMdd");
+    /**
+     * 提交频率护栏：按分钟分桶计数。桶号写在 key 里，所以 EXPIRE 只是清理手段，
+     * 万一漏设也会随桶号自然作废，不会把用户永久锁死。超限时不回滚计数——固定窗口本来就该只放 N 个进去。
+     */
+    private void checkSubmitRate(Long userId) {
+        int limit = aiImageEditProperties.getSubmitRatePerMinute();
+        if (limit <= 0) {
+            return;
+        }
+        String key = RATE_KEY_PREFIX + userId + ":" + (System.currentTimeMillis() / 60_000L);
+        Long count = stringRedisTemplate.opsForValue().increment(key);
+        stringRedisTemplate.expire(key, Duration.ofSeconds(120));
+        ThrowUtils.throwIf(count != null && count > limit, ErrorCode.OPERATION_ERROR,
+                "提交太频繁，每分钟最多 " + limit + " 次，请稍后再试");
     }
 
     /**
-     * 占用一次日额度。按提交次数计，任务执行失败不退还（它是防刷护栏不是计费账本，百炼侧失败本身不产生费用）。
-     * 每次自增后都重设过期时间：INCR 与 EXPIRE 是两条命令，若上次中途断掉留下无 TTL 的键，这样能自愈，
-     * 也保证超额被拒时不会把计数白白推高。
+     * 扣一次额度。余额条件写在 SQL 里而不是"先查再改"，否则并发下两个请求会同时通过校验、把余额扣成负数。
+     * 影响行数为 0 就说明余额不足。
      */
-    private void increaseQuota(String quotaKey) {
-        Long count = stringRedisTemplate.opsForValue().increment(quotaKey);
-        stringRedisTemplate.expire(quotaKey, Duration.ofHours(25));
-        int limit = aiImageEditProperties.getDailyQuotaPerUser();
-        if (count != null && count > limit) {
-            stringRedisTemplate.opsForValue().increment(quotaKey, -1);
-            throw new BusinessException(ErrorCode.OPERATION_ERROR, "今日 AI 编辑次数已用完，请明天再试");
+    private void deductQuota(Long userId) {
+        boolean deducted = userService.update(new UpdateWrapper<User>()
+                .setSql("aiQuota = aiQuota - 1")
+                .eq("id", userId)
+                .ge("aiQuota", 1));
+        ThrowUtils.throwIf(!deducted, ErrorCode.OPERATION_ERROR, "AI 编辑额度不足，请联系管理员发放");
+    }
+
+    /**
+     * 退还一次额度。只在确实扣过之后调用，所以不需要上限保护。
+     */
+    private void refundQuota(Long userId) {
+        try {
+            userService.update(new UpdateWrapper<User>()
+                    .setSql("aiQuota = aiQuota + 1")
+                    .eq("id", userId));
+        } catch (Exception e) {
+            log.error("退还 AI 编辑额度失败, userId = {}", userId, e);
         }
     }
 
-    private void refundQuota(String quotaKey) {
-        try {
-            Long count = stringRedisTemplate.opsForValue().increment(quotaKey, -1);
-            if (count != null && count < 0) {
-                stringRedisTemplate.delete(quotaKey);
-            }
-        } catch (Exception e) {
-            log.error("回滚 AI 编辑日额度失败, key = {}", quotaKey, e);
+    /**
+     * 任务级失败（FAILED / CANCELED）退还额度。前端每 2 秒轮询一次，失败状态会被反复读到，
+     * 所以用 SETNX 标记位抢占：只有抢到的那个请求执行退还，多标签页并发也不会重复退。
+     * 先占标记再退款是刻意的方向选择——退款自身失败只会让用户少一次额度（管理员可补），
+     * 反过来则会白送额度。
+     */
+    private void refundQuotaOnce(String taskId, Long userId) {
+        String markKey = TASK_KEY_PREFIX + taskId + REFUNDED_KEY_SUFFIX;
+        Boolean first = stringRedisTemplate.opsForValue().setIfAbsent(markKey, "1",
+                Duration.ofHours(Math.min(aiImageEditProperties.getTaskTtlHours(), ALIYUN_RESULT_KEEP_HOURS)));
+        if (Boolean.TRUE.equals(first)) {
+            refundQuota(userId);
+            log.info("AI 编辑任务失败，已退还额度, taskId = {}, userId = {}", taskId, userId);
         }
     }
 

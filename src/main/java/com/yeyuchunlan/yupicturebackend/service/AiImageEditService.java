@@ -55,13 +55,13 @@ public interface AiImageEditService {
      * 查询当前用户的 AI 编辑额度余量，供前端在打开弹窗时展示
      *
      * @param loginUser 登录用户
-     * @return 剩余额度与每日上限
+     * @return 剩余额度（user.aiQuota，用完需管理员发放）
      */
     AiImageEditQuotaVO getQuota(User loginUser);
 
     /**
      * 取原图的 base64 底图，供前端本地画布绘制涂抹蒙版（避免跨域图片污染 canvas）。
-     * 只读，不消耗日额度。
+     * 只读，不消耗额度。
      *
      * @param pictureId 图片 id
      * @param loginUser 登录用户

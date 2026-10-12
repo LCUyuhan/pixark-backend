@@ -57,6 +57,12 @@ public class User implements Serializable {
     private String userRole;
 
     /**
+     * AI 图片编辑剩余额度（次数）。
+     * 注册与管理员新增用户时不显式赋值，靠 DDL 的 default 10 发放；扣减与退还都走原子 SQL，不做读改写
+     */
+    private Integer aiQuota;
+
+    /**
      * 编辑时间
      */
     private Date editTime;

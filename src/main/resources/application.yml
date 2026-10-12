@@ -11,7 +11,7 @@ spring:
   # 上传文件大小限制
   servlet:
     multipart:
-      max-file-size: 10MB
+      max-file-size: 5MB
   application:
     name: yu-picture-backend
   # 数据库配置
@@ -80,8 +80,9 @@ knife4j:
 #    - description_edit_with_mask
 #    - control_cartoon_feature
 #  watermark: false             # 是否在生成图右下角加「AI生成」标识，对外提供服务时建议开启
-#  daily-quota-per-user: 20
+#  submit-rate-per-minute: 3    # 单用户每分钟最多提交几次任务，<=0 表示不限流
 #  task-ttl-hours: 23               # 必须 <= 24，百炼任务与结果 URL 只保留 24 小时
+# 注：AI 编辑额度不在这里配，它是 user 表的 aiQuota 字段（持久余额，注册默认 10 次，管理员在用户管理里发放）
 
 
 

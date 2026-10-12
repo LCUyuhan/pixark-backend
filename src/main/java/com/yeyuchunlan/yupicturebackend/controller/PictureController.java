@@ -83,6 +83,10 @@ public class PictureController {
             HttpServletRequest request) {
         User loginUser = userService.getLoginUser(request);
         PictureVO pictureVO = pictureService.uploadPicture(multipartFile, pictureUploadRequest, loginUser);
+        // 管理员上传公共图会直接过审（fillReviewParams），不清缓存的话新图最多 10 分钟不出现在首页
+        if (pictureVO.getSpaceId() == null && userService.isAdmin(loginUser)) {
+            clearPublicGalleryCache();
+        }
         return ResultUtils.success(pictureVO);
     }
 
@@ -96,6 +100,9 @@ public class PictureController {
         User loginUser = userService.getLoginUser(request);
         String fileUrl = pictureUploadRequest.getFileUrl();
         PictureVO pictureVO = pictureService.uploadPicture(fileUrl, pictureUploadRequest, loginUser);
+        if (pictureVO.getSpaceId() == null && userService.isAdmin(loginUser)) {
+            clearPublicGalleryCache();
+        }
         return ResultUtils.success(pictureVO);
     }
 
@@ -415,7 +422,9 @@ public class PictureController {
     // region AI 图片编辑
 
     /**
-     * 创建 AI 图片编辑任务（接口只支持异步，需轮询查询接口获取结果）
+     * 创建 AI 图片编辑任务（接口只支持异步，需轮询查询接口获取结果）。
+     * 受两道闸限制：每分钟提交次数（ai-image-edit.submit-rate-per-minute）与 user.aiQuota 余额，
+     * 任务下发失败或执行失败都会把余额退回去
      */
     @PostMapping("/ai/edit/create_task")
     public BaseResponse<AiImageEditTaskVO> createAiImageEditTask(@RequestBody AiImageEditCreateRequest aiImageEditCreateRequest,
@@ -446,6 +455,9 @@ public class PictureController {
         ThrowUtils.throwIf(aiImageEditSaveRequest == null, ErrorCode.PARAMS_ERROR);
         User loginUser = userService.getLoginUser(request);
         PictureVO pictureVO = aiImageEditService.saveTaskResult(aiImageEditSaveRequest, loginUser);
+        if (pictureVO.getSpaceId() == null && userService.isAdmin(loginUser)) {
+            clearPublicGalleryCache();
+        }
         return ResultUtils.success(pictureVO);
     }
 
@@ -470,7 +482,7 @@ public class PictureController {
     }
 
     /**
-     * 取原图的 base64 底图，供前端本地画布绘制涂抹蒙版（只读，不消耗日额度）
+     * 取原图的 base64 底图，供前端本地画布绘制涂抹蒙版（只读，不消耗额度）
      */
     @GetMapping("/ai/edit/base_image")
     public BaseResponse<AiImageEditBaseImageVO> getAiImageEditBaseImage(Long pictureId, HttpServletRequest request) {

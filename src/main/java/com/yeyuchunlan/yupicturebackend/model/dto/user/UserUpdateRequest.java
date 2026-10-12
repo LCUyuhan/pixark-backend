@@ -36,5 +36,11 @@ public class UserUpdateRequest implements Serializable {
      */
     private String userRole;
 
+    /**
+     * AI 图片编辑剩余额度（次数），仅管理员可改。
+     * 留空则不更新该字段（MyBatis-Plus 默认只更新非 null 字段），避免改昵称时把额度误清零
+     */
+    private Integer aiQuota;
+
     private static final long serialVersionUID = 1L;
 }

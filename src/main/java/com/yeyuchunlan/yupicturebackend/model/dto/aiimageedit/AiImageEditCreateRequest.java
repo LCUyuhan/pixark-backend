@@ -1,4 +1,4 @@
-package com.yeyuchunlan.yupicturebackend.model.dto.picture;
+package com.yeyuchunlan.yupicturebackend.model.dto.aiimageedit;
 
 import lombok.Data;
 

@@ -118,17 +118,19 @@ public interface PictureService extends IService<Picture> {
 
     /**
      * 删除图片服务
-      * @param pictureId 图片id
+     * @param pictureId 图片id
      * @param loginUser 登录用户
+     * @return 被删除的图片实体（调用方据此判断是否为公共图库图片）
      */
-    void deletePicture(long pictureId, User loginUser);
+    Picture deletePicture(long pictureId, User loginUser);
 
     /**
      * 编辑图片服务
      * @param pictureEditRequest 编辑图片请求
      * @param loginUser 登录用户
+     * @return 编辑前的图片实体（调用方据此判断是否为公共图库图片）
      */
-    void editPicture(PictureEditRequest pictureEditRequest, User loginUser);
+    Picture editPicture(PictureEditRequest pictureEditRequest, User loginUser);
     /**
      * 根据颜色搜索图片
      * @param spaceId 空间id

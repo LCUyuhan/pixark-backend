@@ -611,9 +611,11 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
      *
      * @param pictureId 图片id
      * @param loginUser 登录用户
+     * @return 被删除的图片实体（调用方据此判断是否为公共图库图片）
      */
     @Override
-    public void deletePicture(long pictureId, User loginUser) {
+    public Picture deletePicture(long pictureId, User loginUser) {
+        //校验参数
         ThrowUtils.throwIf(pictureId <= 0, ErrorCode.PARAMS_ERROR);
         ThrowUtils.throwIf(loginUser == null, ErrorCode.NO_AUTH_ERROR);
         // 判断是否存在
@@ -640,6 +642,7 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
         });
         // 异步清理文件（通过自身代理调用，保证 @Async 生效）
         self.clearPictureFile(oldPicture);
+        return oldPicture;
     }
 
 
@@ -647,9 +650,10 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
      * 编辑图片服务
      * @param pictureEditRequest 编辑图片请求
      * @param loginUser 登录用户
+     * @return 编辑前的图片实体（调用方据此判断是否为公共图库图片）
      */
     @Override
-    public void editPicture(PictureEditRequest pictureEditRequest, User loginUser) {
+    public Picture editPicture(PictureEditRequest pictureEditRequest, User loginUser) {
         // 在此处将实体类和 DTO 进行转换
         Picture picture = new Picture();
         BeanUtils.copyProperties(pictureEditRequest, picture);
@@ -672,6 +676,17 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
         // 操作数据库
         boolean result = this.updateById(picture);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
+        // updateById 走 NOT_NULL 策略不会写 null，打回待审时要把上一轮审核痕迹显式清掉，
+        // 否则管理页会出现「待审核」旁边挂着「管理员操作通过」
+        if (ObjUtil.equal(picture.getReviewStatus(), PictureReviewStatusEnum.REVIEWING.getValue())) {
+            this.lambdaUpdate()
+                    .eq(Picture::getId, id)
+                    .set(Picture::getReviewMessage, null)
+                    .set(Picture::getReviewerId, null)
+                    .set(Picture::getReviewTime, null)
+                    .update();
+        }
+        return oldPicture;
     }
 
     /**

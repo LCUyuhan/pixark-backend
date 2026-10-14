@@ -1,11 +1,6 @@
 package com.yeyuchunlan.yupicturebackend.controller;
 
-import cn.hutool.core.util.RandomUtil;
-import cn.hutool.core.util.StrUtil;
-import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
 import com.yeyuchunlan.yupicturebackend.annotation.AuthCheck;
 import com.yeyuchunlan.yupicturebackend.api.imagesearch.ImageSearchSelector;
 import com.yeyuchunlan.yupicturebackend.api.imagesearch.ImageSearchService;
@@ -17,36 +12,22 @@ import com.yeyuchunlan.yupicturebackend.constant.UserConstant;
 import com.yeyuchunlan.yupicturebackend.exception.BusinessException;
 import com.yeyuchunlan.yupicturebackend.exception.ErrorCode;
 import com.yeyuchunlan.yupicturebackend.exception.ThrowUtils;
+import com.yeyuchunlan.yupicturebackend.manager.PictureCacheManager;
 import com.yeyuchunlan.yupicturebackend.model.dto.picture.*;
 import com.yeyuchunlan.yupicturebackend.model.entity.Picture;
 import com.yeyuchunlan.yupicturebackend.model.entity.Space;
 import com.yeyuchunlan.yupicturebackend.model.entity.User;
 import com.yeyuchunlan.yupicturebackend.model.enums.PictureReviewStatusEnum;
-import com.yeyuchunlan.yupicturebackend.model.vo.AiImageEditBaseImageVO;
-import com.yeyuchunlan.yupicturebackend.model.vo.AiImageEditQuotaVO;
-import com.yeyuchunlan.yupicturebackend.model.vo.AiImageEditStyleVO;
-import com.yeyuchunlan.yupicturebackend.model.vo.AiImageEditTaskVO;
 import com.yeyuchunlan.yupicturebackend.model.vo.PictureTagCategory;
 import com.yeyuchunlan.yupicturebackend.model.vo.PictureVO;
-import com.yeyuchunlan.yupicturebackend.service.AiImageEditService;
 import com.yeyuchunlan.yupicturebackend.service.PictureService;
 import com.yeyuchunlan.yupicturebackend.service.SpaceService;
 import com.yeyuchunlan.yupicturebackend.service.UserService;
-import org.springframework.beans.BeanUtils;
-import org.springframework.data.redis.core.Cursor;
-import org.springframework.data.redis.core.ScanOptions;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
-import org.springframework.util.DigestUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Arrays;
-import java.util.Date;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
-import java.util.concurrent.TimeUnit;
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 
@@ -59,14 +40,11 @@ public class PictureController {
     @Resource
     private UserService userService;
     @Resource
-    private StringRedisTemplate stringRedisTemplate;
-    @Resource
     private SpaceService spaceService;
     @Resource
     private ImageSearchSelector imageSearchSelector;
-
     @Resource
-    private AiImageEditService aiImageEditService;
+    private PictureCacheManager pictureCacheManager;
 
 
 
@@ -76,7 +54,7 @@ public class PictureController {
      * 上传图片（可重新上传）
      */
     @PostMapping("/upload")
-    //@AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+
     public BaseResponse<PictureVO> uploadPicture(
             @RequestPart("file") MultipartFile multipartFile,
             PictureUploadRequest pictureUploadRequest,
@@ -85,7 +63,7 @@ public class PictureController {
         PictureVO pictureVO = pictureService.uploadPicture(multipartFile, pictureUploadRequest, loginUser);
         // 管理员上传公共图会直接过审（fillReviewParams），不清缓存的话新图最多 10 分钟不出现在首页
         if (pictureVO.getSpaceId() == null && userService.isAdmin(loginUser)) {
-            clearPublicGalleryCache();
+            pictureCacheManager.clearPublicGalleryCache();
         }
         return ResultUtils.success(pictureVO);
     }
@@ -101,7 +79,7 @@ public class PictureController {
         String fileUrl = pictureUploadRequest.getFileUrl();
         PictureVO pictureVO = pictureService.uploadPicture(fileUrl, pictureUploadRequest, loginUser);
         if (pictureVO.getSpaceId() == null && userService.isAdmin(loginUser)) {
-            clearPublicGalleryCache();
+            pictureCacheManager.clearPublicGalleryCache();
         }
         return ResultUtils.success(pictureVO);
     }
@@ -120,42 +98,11 @@ public class PictureController {
         User loginUser = userService.getLoginUser(request);
         long id = deleteRequest.getId();
         // 调用服务层方法删除图片
-        pictureService.deletePicture(id, loginUser);
-        // 清除公共图库缓存
-        clearPublicGalleryCache();
-        return ResultUtils.success(true);
-    }
-
-    /**
-     * 更新图片（仅管理员可用）
-     */
-    @PostMapping("/update")
-    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
-    public BaseResponse<Boolean> updatePicture(@RequestBody PictureUpdateRequest pictureUpdateRequest, HttpServletRequest request) {
-        if (pictureUpdateRequest == null || pictureUpdateRequest.getId() == null || pictureUpdateRequest.getId() <= 0) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        Picture deletedPicture = pictureService.deletePicture(id, loginUser);
+        // 列表缓存只覆盖公共图库的图，删私有空间的图不该把它打回冷启动
+        if (deletedPicture.getSpaceId() == null) {
+            pictureCacheManager.clearPublicGalleryCache();
         }
-        // 将实体类和 DTO 进行转换
-        Picture picture = new Picture();
-        BeanUtils.copyProperties(pictureUpdateRequest, picture);
-        // 注意将 list 转为 string（tags 为 null 时不覆盖原值，避免写成字符串 "null"）
-        if (pictureUpdateRequest.getTags() != null) {
-            picture.setTags(JSONUtil.toJsonStr(pictureUpdateRequest.getTags()));
-        }
-        // 数据校验
-        pictureService.validPicture(picture);
-        // 判断是否存在
-        long id = pictureUpdateRequest.getId();
-        Picture oldPicture = pictureService.getById(id);
-        ThrowUtils.throwIf(oldPicture == null, ErrorCode.NOT_FOUND_ERROR);
-        //补充审核参数
-        User loginUser = userService.getLoginUser(request);
-        pictureService.fillReviewParams(picture, loginUser, oldPicture.getSpaceId());
-        // 操作数据库
-        boolean result = pictureService.updateById(picture);
-        ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
-        // 清除公共图库缓存
-        clearPublicGalleryCache();
         return ResultUtils.success(true);
     }
 
@@ -211,13 +158,6 @@ public class PictureController {
      * 分页获取图片列表（封装类）
      * 公共图库（spaceId 为 null）走缓存，私有空间直接查库
      */
-    // Caffeine 本地缓存：1 分钟过期，挡掉绝大部分重复请求
-    private final Cache<String, String> LOCAL_CACHE =
-            Caffeine.newBuilder().initialCapacity(1024)
-                    .maximumSize(10000L)
-                    .expireAfterWrite(1L, TimeUnit.MINUTES)
-                    .build();
-
     @PostMapping("/list/page/vo")
     public BaseResponse<Page<PictureVO>> listPictureVOByPage(@RequestBody PictureQueryRequest pictureQueryRequest,
                                                              HttpServletRequest request) {
@@ -245,40 +185,22 @@ public class PictureController {
                     pictureService.getQueryWrapper(pictureQueryRequest));
             return ResultUtils.success(pictureService.getPictureVOPage(picturePage, request));
         }
-        // === 以下为公共图库缓存逻辑 ===
-        // 构建缓存 key
-        String queryCondition = JSONUtil.toJsonStr(pictureQueryRequest);
-        String hashKey = DigestUtils.md5DigestAsHex(queryCondition.getBytes());
-        String cacheKey = "yupicture:listPictureVOByPage:" + hashKey;
-        // 1. 查询本地缓存（Caffeine）
-        String cachedValue = LOCAL_CACHE.getIfPresent(cacheKey);
-        if (cachedValue != null) {
-            Page<PictureVO> cachedPage = JSONUtil.toBean(cachedValue, Page.class);
+        // === 以下为公共图库缓存逻辑（本地 -> Redis -> DB 三级，交由 PictureCacheManager 编排）===
+        String cacheKey = pictureCacheManager.buildCacheKey(pictureQueryRequest);
+        Page<PictureVO> cachedPage = pictureCacheManager.getCachePage(cacheKey);
+        if (cachedPage != null) {
             return ResultUtils.success(cachedPage);
         }
-        // 2. 查询分布式缓存（Redis）
-        ValueOperations<String, String> valueOps = stringRedisTemplate.opsForValue();
-        cachedValue = valueOps.get(cacheKey);
-        if (cachedValue != null) {
-            LOCAL_CACHE.put(cacheKey, cachedValue);
-            Page<PictureVO> cachedPage = JSONUtil.toBean(cachedValue, Page.class);
-            return ResultUtils.success(cachedPage);
-        }
-        // 3. 查询数据库
+        // 缓存未命中：查询数据库并回写缓存
         Page<Picture> picturePage = pictureService.page(new Page<>(current, size),
                 pictureService.getQueryWrapper(pictureQueryRequest));
         Page<PictureVO> pictureVOPage = pictureService.getPictureVOPage(picturePage, request);
-        // 4. 写入缓存
-        String cacheValue = JSONUtil.toJsonStr(pictureVOPage);
-        LOCAL_CACHE.put(cacheKey, cacheValue);
-        // Redis 缓存 5~10 分钟随机过期，防止缓存雪崩
-        int cacheExpireTime = 300 + RandomUtil.randomInt(0, 300);
-        valueOps.set(cacheKey, cacheValue, cacheExpireTime, TimeUnit.SECONDS);
+        pictureCacheManager.putCachePage(cacheKey, pictureVOPage);
         return ResultUtils.success(pictureVOPage);
     }
 
     /**
-     * 编辑图片（给用户使用）
+     * 编辑图片（给用户和管理员使用）
      *
      * @param pictureEditRequest 图片编辑请求
      *
@@ -290,7 +212,11 @@ public class PictureController {
         }
         User loginUser = userService.getLoginUser(request);
         // 调用服务层方法编辑图片
-        pictureService.editPicture(pictureEditRequest, loginUser);
+        Picture oldPicture = pictureService.editPicture(pictureEditRequest, loginUser);
+        // 只有公共图库的图会被列表缓存覆盖；编辑后它要么文案变了，要么被打回待审需要从列表摘掉
+        if (oldPicture.getSpaceId() == null) {
+            pictureCacheManager.clearPublicGalleryCache();
+        }
         return ResultUtils.success(true);
     }
 
@@ -324,7 +250,7 @@ public class PictureController {
         User loginUser = userService.getLoginUser(request);
         pictureService.doPictureReview(pictureReviewRequest, loginUser);
         // 清除公共图库缓存，确保审核结果及时展示
-        clearPublicGalleryCache();
+        pictureCacheManager.clearPublicGalleryCache();
         return ResultUtils.success(true);
     }
 
@@ -344,32 +270,9 @@ public class PictureController {
         User loginUser = userService.getLoginUser(request);
         int uploadCount = pictureService.uploadPictureByBatch(pictureUploadByBatchRequest, loginUser);
         // 清除公共图库缓存
-        clearPublicGalleryCache();
+        pictureCacheManager.clearPublicGalleryCache();
         return ResultUtils.success(uploadCount);
     }
-
-    /**
-     * 清除公共图库缓存（本地缓存 + Redis）
-     * 仅在影响公共图库可见数据的操作后调用：删除图片、管理员更新、审核通过、批量上传
-     * 普通用户上传/编辑不影响公共图库（需审核后才可见），无需清缓存
-     */
-    private void clearPublicGalleryCache() {
-        // 清除本地缓存
-        LOCAL_CACHE.invalidateAll();
-        // 清除 Redis 中所有公共图库分页缓存（用 SCAN 分批扫描，避免 KEYS 阻塞 Redis 单线程）
-        Set<String> keys = new HashSet<>();
-        ScanOptions options = ScanOptions.scanOptions()
-                .match("yupicture:listPictureVOByPage:*")
-                .count(100)
-                .build();
-        try (Cursor<String> cursor = stringRedisTemplate.scan(options)) {
-            cursor.forEachRemaining(keys::add);
-        }
-        if (!keys.isEmpty()) {
-            stringRedisTemplate.delete(keys);
-        }
-    }
-
 
     /**
      * 以图搜图（从全网搜索图片，暂时在个人空间调用）
@@ -418,80 +321,5 @@ public class PictureController {
         pictureService.editPictureByBatch(pictureEditByBatchRequest, loginUser);
         return ResultUtils.success(true);
     }
-
-    // region AI 图片编辑
-
-    /**
-     * 创建 AI 图片编辑任务（接口只支持异步，需轮询查询接口获取结果）。
-     * 受两道闸限制：每分钟提交次数（ai-image-edit.submit-rate-per-minute）与 user.aiQuota 余额，
-     * 任务下发失败或执行失败都会把余额退回去
-     */
-    @PostMapping("/ai/edit/create_task")
-    public BaseResponse<AiImageEditTaskVO> createAiImageEditTask(@RequestBody AiImageEditCreateRequest aiImageEditCreateRequest,
-                                                                 HttpServletRequest request) {
-        ThrowUtils.throwIf(aiImageEditCreateRequest == null, ErrorCode.PARAMS_ERROR);
-        User loginUser = userService.getLoginUser(request);
-        AiImageEditTaskVO taskVO = aiImageEditService.createTask(aiImageEditCreateRequest, loginUser);
-        return ResultUtils.success(taskVO);
-    }
-
-    /**
-     * 查询 AI 图片编辑任务，仅任务提交人可查；返回的图片地址 24 小时后失效
-     */
-    @GetMapping("/ai/edit/get_task")
-    public BaseResponse<AiImageEditTaskVO> getAiImageEditTask(String taskId, HttpServletRequest request) {
-        ThrowUtils.throwIf(StrUtil.isBlank(taskId), ErrorCode.PARAMS_ERROR, "任务 id 不能为空");
-        User loginUser = userService.getLoginUser(request);
-        AiImageEditTaskVO taskVO = aiImageEditService.getTask(taskId, loginUser);
-        return ResultUtils.success(taskVO);
-    }
-
-    /**
-     * 保存 AI 图片编辑结果，replace 为 true 时覆盖原图（原图文件会被删除）
-     */
-    @PostMapping("/ai/edit/save")
-    public BaseResponse<PictureVO> saveAiImageEditResult(@RequestBody AiImageEditSaveRequest aiImageEditSaveRequest,
-                                                         HttpServletRequest request) {
-        ThrowUtils.throwIf(aiImageEditSaveRequest == null, ErrorCode.PARAMS_ERROR);
-        User loginUser = userService.getLoginUser(request);
-        PictureVO pictureVO = aiImageEditService.saveTaskResult(aiImageEditSaveRequest, loginUser);
-        if (pictureVO.getSpaceId() == null && userService.isAdmin(loginUser)) {
-            clearPublicGalleryCache();
-        }
-        return ResultUtils.success(pictureVO);
-    }
-
-    /**
-     * 查询风格化功能的预设风格清单（仅返回已开放的功能）
-     */
-    @GetMapping("/ai/edit/styles")
-    public BaseResponse<List<AiImageEditStyleVO>> listAiImageEditStyles(String function, HttpServletRequest request) {
-        userService.getLoginUser(request);
-        List<AiImageEditStyleVO> styleList = aiImageEditService.listStyles(function);
-        return ResultUtils.success(styleList);
-    }
-
-    /**
-     * 查询当前用户的 AI 编辑额度余量（打开 AI 编辑弹窗时调用）
-     */
-    @GetMapping("/ai/edit/quota")
-    public BaseResponse<AiImageEditQuotaVO> getAiImageEditQuota(HttpServletRequest request) {
-        User loginUser = userService.getLoginUser(request);
-        AiImageEditQuotaVO quotaVO = aiImageEditService.getQuota(loginUser);
-        return ResultUtils.success(quotaVO);
-    }
-
-    /**
-     * 取原图的 base64 底图，供前端本地画布绘制涂抹蒙版（只读，不消耗额度）
-     */
-    @GetMapping("/ai/edit/base_image")
-    public BaseResponse<AiImageEditBaseImageVO> getAiImageEditBaseImage(Long pictureId, HttpServletRequest request) {
-        ThrowUtils.throwIf(pictureId == null || pictureId <= 0, ErrorCode.PARAMS_ERROR, "图片 id 不合法");
-        User loginUser = userService.getLoginUser(request);
-        AiImageEditBaseImageVO baseImageVO = aiImageEditService.getBaseImage(pictureId, loginUser);
-        return ResultUtils.success(baseImageVO);
-    }
-
-    // endregion
 
 }

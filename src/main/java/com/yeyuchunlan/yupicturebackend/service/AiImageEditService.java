@@ -1,7 +1,7 @@
 package com.yeyuchunlan.yupicturebackend.service;
 
-import com.yeyuchunlan.yupicturebackend.model.dto.picture.AiImageEditCreateRequest;
-import com.yeyuchunlan.yupicturebackend.model.dto.picture.AiImageEditSaveRequest;
+import com.yeyuchunlan.yupicturebackend.model.dto.aiimageedit.AiImageEditCreateRequest;
+import com.yeyuchunlan.yupicturebackend.model.dto.aiimageedit.AiImageEditSaveRequest;
 import com.yeyuchunlan.yupicturebackend.model.entity.User;
 import com.yeyuchunlan.yupicturebackend.model.vo.AiImageEditBaseImageVO;
 import com.yeyuchunlan.yupicturebackend.model.vo.AiImageEditQuotaVO;

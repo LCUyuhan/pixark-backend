@@ -1,4 +1,4 @@
-package com.yeyuchunlan.yupicturebackend.model.vo;
+package com.yeyuchunlan.yupicturebackend.model.vo.picture;
 
 
 import lombok.Data;

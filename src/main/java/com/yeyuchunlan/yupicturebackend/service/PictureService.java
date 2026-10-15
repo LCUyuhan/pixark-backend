@@ -6,9 +6,8 @@ import com.yeyuchunlan.yupicturebackend.model.dto.picture.*;
 import com.yeyuchunlan.yupicturebackend.model.entity.Picture;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.yeyuchunlan.yupicturebackend.model.entity.User;
-import com.yeyuchunlan.yupicturebackend.model.vo.PictureVO;
+import com.yeyuchunlan.yupicturebackend.model.vo.picture.PictureVO;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
 
 import javax.servlet.http.HttpServletRequest;
 import java.util.List;

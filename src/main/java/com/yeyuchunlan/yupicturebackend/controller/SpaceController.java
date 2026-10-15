@@ -15,13 +15,12 @@ import com.yeyuchunlan.yupicturebackend.model.dto.space.SpaceUpdateRequest;
 import com.yeyuchunlan.yupicturebackend.model.entity.Space;
 import com.yeyuchunlan.yupicturebackend.model.entity.User;
 import com.yeyuchunlan.yupicturebackend.model.enums.SpaceLevelEnum;
-import com.yeyuchunlan.yupicturebackend.model.vo.SpaceLevel;
-import com.yeyuchunlan.yupicturebackend.model.vo.SpaceVO;
+import com.yeyuchunlan.yupicturebackend.model.vo.space.SpaceLevel;
+import com.yeyuchunlan.yupicturebackend.model.vo.space.SpaceVO;
 import com.yeyuchunlan.yupicturebackend.service.SpaceService;
 import com.yeyuchunlan.yupicturebackend.service.UserService;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.springframework.beans.BeanUtils;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;

@@ -1,7 +1,8 @@
-package com.yeyuchunlan.yupicturebackend.model.vo;
+package com.yeyuchunlan.yupicturebackend.model.vo.picture;
 
 import cn.hutool.json.JSONUtil;
 import com.yeyuchunlan.yupicturebackend.model.entity.Picture;
+import com.yeyuchunlan.yupicturebackend.model.vo.user.UserVO;
 import lombok.Data;
 import org.springframework.beans.BeanUtils;
 
@@ -109,6 +110,26 @@ public class PictureVO implements Serializable {
      * 图片主色调
      */
     private String picColor;
+
+    /**
+     * 审核状态：0-待审核; 1-通过; 2-拒绝
+     */
+    private Integer reviewStatus;
+
+    /**
+     * 审核信息（通过 / 拒绝理由）
+     */
+    private String reviewMessage;
+
+    /**
+     * 审核人 ID
+     */
+    private Long reviewerId;
+
+    /**
+     * 审核时间
+     */
+    private Date reviewTime;
 
     private static final long serialVersionUID = 1L;
 

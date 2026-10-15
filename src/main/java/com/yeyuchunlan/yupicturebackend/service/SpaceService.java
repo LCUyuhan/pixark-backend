@@ -8,7 +8,7 @@ import com.yeyuchunlan.yupicturebackend.model.dto.space.SpaceQueryRequest;
 import com.yeyuchunlan.yupicturebackend.model.entity.Space;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.yeyuchunlan.yupicturebackend.model.entity.User;
-import com.yeyuchunlan.yupicturebackend.model.vo.SpaceVO;
+import com.yeyuchunlan.yupicturebackend.model.vo.space.SpaceVO;
 
 /**
 * @author him
@@ -72,4 +72,11 @@ public interface SpaceService extends IService<Space> {
      * @return 空间封装对象分页数据
      */
     Page<SpaceVO> getSpaceVOPage(Page<Space> spacePage);
+
+    /**
+     * 校验登录用户对空间的访问权限（空间创建人或管理员可用）
+     * @param loginUser 登录用户
+     * @param space     空间
+     */
+    void checkSpaceAuth(User loginUser, Space space);
 }

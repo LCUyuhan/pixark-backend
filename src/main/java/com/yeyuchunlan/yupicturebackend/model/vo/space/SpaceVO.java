@@ -1,6 +1,7 @@
-package com.yeyuchunlan.yupicturebackend.model.vo;
+package com.yeyuchunlan.yupicturebackend.model.vo.space;
 
 import com.yeyuchunlan.yupicturebackend.model.entity.Space;
+import com.yeyuchunlan.yupicturebackend.model.vo.user.UserVO;
 import lombok.Data;
 import org.springframework.beans.BeanUtils;
 

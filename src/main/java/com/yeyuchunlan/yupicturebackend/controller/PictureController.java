@@ -18,8 +18,8 @@ import com.yeyuchunlan.yupicturebackend.model.entity.Picture;
 import com.yeyuchunlan.yupicturebackend.model.entity.Space;
 import com.yeyuchunlan.yupicturebackend.model.entity.User;
 import com.yeyuchunlan.yupicturebackend.model.enums.PictureReviewStatusEnum;
-import com.yeyuchunlan.yupicturebackend.model.vo.PictureTagCategory;
-import com.yeyuchunlan.yupicturebackend.model.vo.PictureVO;
+import com.yeyuchunlan.yupicturebackend.model.vo.picture.PictureTagCategory;
+import com.yeyuchunlan.yupicturebackend.model.vo.picture.PictureVO;
 import com.yeyuchunlan.yupicturebackend.service.PictureService;
 import com.yeyuchunlan.yupicturebackend.service.SpaceService;
 import com.yeyuchunlan.yupicturebackend.service.UserService;
@@ -197,6 +197,27 @@ public class PictureController {
         Page<PictureVO> pictureVOPage = pictureService.getPictureVOPage(picturePage, request);
         pictureCacheManager.putCachePage(cacheKey, pictureVOPage);
         return ResultUtils.success(pictureVOPage);
+    }
+
+    /**
+     * 我上传的公共图片分页（仅本人，含待审核与被拒绝，供普通用户跟审核进度）
+     */
+    @PostMapping("/my/list/page/vo")
+    public BaseResponse<Page<PictureVO>> listMyPictureVOByPage(@RequestBody PictureQueryRequest pictureQueryRequest,
+                                                               HttpServletRequest request) {
+        pictureQueryRequest.normalizePage();
+        long current = pictureQueryRequest.getCurrent();
+        long size = pictureQueryRequest.getPageSize();
+        // 限制爬虫
+        ThrowUtils.throwIf(size > 20, ErrorCode.PARAMS_ERROR);
+        User loginUser = userService.getLoginUser(request);
+        // 归属以登录态为准，前端传什么 userId 都无效；只列公共图库，空间图在空间页看
+        pictureQueryRequest.setUserId(loginUser.getId());
+        pictureQueryRequest.setNullSpaceId(true);
+        // 个人数据不接公共图库缓存：量小、且审核状态变化频繁
+        Page<Picture> picturePage = pictureService.page(new Page<>(current, size),
+                pictureService.getQueryWrapper(pictureQueryRequest));
+        return ResultUtils.success(pictureService.getPictureVOPage(picturePage, request));
     }
 
     /**

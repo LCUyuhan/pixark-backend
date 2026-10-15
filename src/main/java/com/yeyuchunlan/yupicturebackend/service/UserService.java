@@ -4,8 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.yeyuchunlan.yupicturebackend.model.dto.user.UserQueryRequest;
 import com.yeyuchunlan.yupicturebackend.model.entity.User;
 import com.baomidou.mybatisplus.extension.service.IService;
-import com.yeyuchunlan.yupicturebackend.model.vo.LoginUserVO;
-import com.yeyuchunlan.yupicturebackend.model.vo.UserVO;
+import com.yeyuchunlan.yupicturebackend.model.vo.user.LoginUserVO;
+import com.yeyuchunlan.yupicturebackend.model.vo.user.UserVO;
 
 import javax.servlet.http.HttpServletRequest;
 import java.util.List;

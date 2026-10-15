@@ -1,19 +1,19 @@
-package com.yeyuchunlan.yupicturebackend.model.vo;
+package com.yeyuchunlan.yupicturebackend.model.vo.user;
 
 import lombok.Data;
 
 import java.io.Serializable;
 import java.util.Date;
 /**
- * 登录用户脱敏类
+ * 用户视图（脱敏）
  *
- * @author yeyuchunlan
+ * @author yeyuchun
  */
 @Data
-public class LoginUserVO implements Serializable {
+public class UserVO implements Serializable {
 
     /**
-     * 用户 id
+     * id
      */
     private Long id;
 
@@ -43,14 +43,14 @@ public class LoginUserVO implements Serializable {
     private String userRole;
 
     /**
+     * AI 图片编辑剩余额度（次数），供管理员在用户管理里查看与发放
+     */
+    private Integer aiQuota;
+
+    /**
      * 创建时间
      */
     private Date createTime;
-
-    /**
-     * 更新时间
-     */
-    private Date updateTime;
 
     private static final long serialVersionUID = 1L;
 }

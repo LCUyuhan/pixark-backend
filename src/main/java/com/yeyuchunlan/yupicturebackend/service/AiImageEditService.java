@@ -3,11 +3,11 @@ package com.yeyuchunlan.yupicturebackend.service;
 import com.yeyuchunlan.yupicturebackend.model.dto.aiimageedit.AiImageEditCreateRequest;
 import com.yeyuchunlan.yupicturebackend.model.dto.aiimageedit.AiImageEditSaveRequest;
 import com.yeyuchunlan.yupicturebackend.model.entity.User;
-import com.yeyuchunlan.yupicturebackend.model.vo.AiImageEditBaseImageVO;
-import com.yeyuchunlan.yupicturebackend.model.vo.AiImageEditQuotaVO;
-import com.yeyuchunlan.yupicturebackend.model.vo.AiImageEditStyleVO;
-import com.yeyuchunlan.yupicturebackend.model.vo.AiImageEditTaskVO;
-import com.yeyuchunlan.yupicturebackend.model.vo.PictureVO;
+import com.yeyuchunlan.yupicturebackend.model.vo.picture.AiImageEditBaseImageVO;
+import com.yeyuchunlan.yupicturebackend.model.vo.picture.AiImageEditQuotaVO;
+import com.yeyuchunlan.yupicturebackend.model.vo.picture.AiImageEditStyleVO;
+import com.yeyuchunlan.yupicturebackend.model.vo.picture.AiImageEditTaskVO;
+import com.yeyuchunlan.yupicturebackend.model.vo.picture.PictureVO;
 
 import java.util.List;
 

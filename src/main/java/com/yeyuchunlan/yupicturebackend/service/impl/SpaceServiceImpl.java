@@ -15,8 +15,8 @@ import com.yeyuchunlan.yupicturebackend.model.entity.Picture;
 import com.yeyuchunlan.yupicturebackend.model.entity.Space;
 import com.yeyuchunlan.yupicturebackend.model.entity.User;
 import com.yeyuchunlan.yupicturebackend.model.enums.SpaceLevelEnum;
-import com.yeyuchunlan.yupicturebackend.model.vo.SpaceVO;
-import com.yeyuchunlan.yupicturebackend.model.vo.UserVO;
+import com.yeyuchunlan.yupicturebackend.model.vo.space.SpaceVO;
+import com.yeyuchunlan.yupicturebackend.model.vo.user.UserVO;
 import com.yeyuchunlan.yupicturebackend.service.PictureService;
 import com.yeyuchunlan.yupicturebackend.service.SpaceService;
 import com.yeyuchunlan.yupicturebackend.mapper.SpaceMapper;
@@ -161,10 +161,8 @@ public class SpaceServiceImpl extends ServiceImpl<SpaceMapper, Space>
         long id = spaceEditRequest.getId();
         Space oldSpace = this.getById(id);
         ThrowUtils.throwIf(oldSpace == null, ErrorCode.NOT_FOUND_ERROR, "空间不存在");
-        // 仅空间创建人可编辑
-        if (!oldSpace.getUserId().equals(loginUser.getId()) && !userService.isAdmin(loginUser)) {
-            throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "没有空间权限");
-        }
+        // 仅空间创建人和管理员
+        this.checkSpaceAuth(loginUser, oldSpace);
         // 只允许编辑空间名称
         Space space = new Space();
         space.setId(id);
@@ -177,7 +175,7 @@ public class SpaceServiceImpl extends ServiceImpl<SpaceMapper, Space>
     }
 
     /**
-     * 删除空间（仅空间创建人或管理员可用）
+     * 删除空间
      * 级联删除空间内所有图片，并在事务提交后异步清理其 COS 文件
      */
     @Override
@@ -186,9 +184,7 @@ public class SpaceServiceImpl extends ServiceImpl<SpaceMapper, Space>
         Space oldSpace = this.getById(spaceId);
         ThrowUtils.throwIf(oldSpace == null, ErrorCode.NOT_FOUND_ERROR, "空间不存在");
         // 仅空间创建人或管理员可删除
-        if (!oldSpace.getUserId().equals(loginUser.getId()) && !userService.isAdmin(loginUser)) {
-            throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "没有空间权限");
-        }
+        this.checkSpaceAuth(loginUser, oldSpace);
         // 先查出空间内所有图片：事务内做逻辑删除，事务后用于清理 COS 文件
         List<Picture> spacePictures = pictureService.lambdaQuery()
                 .eq(Picture::getSpaceId, spaceId)
@@ -279,6 +275,17 @@ public class SpaceServiceImpl extends ServiceImpl<SpaceMapper, Space>
         });
         spaceVOPage.setRecords(spaceVOList);
         return spaceVOPage;
+    }
+
+    /**
+     * 校验登录用户对空间的访问权限（空间创建人或管理员可用）
+     */
+    @Override
+    public void checkSpaceAuth(User loginUser, Space space) {
+        // 仅本人或管理员可访问
+        if (!space.getUserId().equals(loginUser.getId()) && !userService.isAdmin(loginUser)) {
+            throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "没有空间权限");
+        }
     }
 
 }

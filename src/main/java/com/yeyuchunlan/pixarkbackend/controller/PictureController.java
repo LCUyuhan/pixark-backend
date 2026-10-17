@@ -8,6 +8,7 @@ import com.yeyuchunlan.pixarkbackend.api.imagesearch.model.ImageSearchResult;
 import com.yeyuchunlan.pixarkbackend.common.BaseResponse;
 import com.yeyuchunlan.pixarkbackend.common.DeleteRequest;
 import com.yeyuchunlan.pixarkbackend.common.ResultUtils;
+import com.yeyuchunlan.pixarkbackend.config.GuestPictureProperties;
 import com.yeyuchunlan.pixarkbackend.constant.UserConstant;
 import com.yeyuchunlan.pixarkbackend.exception.BusinessException;
 import com.yeyuchunlan.pixarkbackend.exception.ErrorCode;
@@ -26,6 +27,7 @@ import com.yeyuchunlan.pixarkbackend.service.UserService;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import javax.annotation.Resource;
@@ -45,6 +47,8 @@ public class PictureController {
     private ImageSearchSelector imageSearchSelector;
     @Resource
     private PictureCacheManager pictureCacheManager;
+    @Resource
+    private GuestPictureProperties guestPictureProperties;
 
 
 
@@ -189,14 +193,34 @@ public class PictureController {
         String cacheKey = pictureCacheManager.buildCacheKey(pictureQueryRequest);
         Page<PictureVO> cachedPage = pictureCacheManager.getCachePage(cacheKey);
         if (cachedPage != null) {
-            return ResultUtils.success(cachedPage);
+            return ResultUtils.success(limitForGuest(cachedPage, current, size, request));
         }
         // 缓存未命中：查询数据库并回写缓存
         Page<Picture> picturePage = pictureService.page(new Page<>(current, size),
                 pictureService.getQueryWrapper(pictureQueryRequest));
         Page<PictureVO> pictureVOPage = pictureService.getPictureVOPage(picturePage, request);
         pictureCacheManager.putCachePage(cacheKey, pictureVOPage);
-        return ResultUtils.success(pictureVOPage);
+        return ResultUtils.success(limitForGuest(pictureVOPage, current, size, request));
+    }
+
+    /**
+     * 游客只能浏览公共图库的前 N 张（N 配在 guest-picture.view-limit）。
+     * 整页照常查询、照常进缓存，只在返回前裁 records，因此游客与登录用户共用同一条缓存；
+     * 两个调用方拿到的都是新实例（缓存走反序列化、回源走新建），原地裁不会污染缓存。
+     */
+    private Page<PictureVO> limitForGuest(Page<PictureVO> page, long current, long size, HttpServletRequest request) {
+        if (request.getSession().getAttribute(UserConstant.USER_LOGIN_STATE) != null) {
+            return page;
+        }
+        List<PictureVO> records = page.getRecords();
+        if (records == null || records.isEmpty()) {
+            return page;
+        }
+        int allow = (int) Math.max(0, guestPictureProperties.getViewLimit() - (current - 1) * size);
+        if (allow < records.size()) {
+            page.setRecords(new ArrayList<>(records.subList(0, allow)));
+        }
+        return page;
     }
 
     /**
@@ -296,7 +320,7 @@ public class PictureController {
     }
 
     /**
-     * 以图搜图（从全网搜索图片，暂时在个人空间调用）
+     * 以图搜图（从全网搜索图片）
      */
     @PostMapping("/search/picture")
     public BaseResponse<List<ImageSearchResult>> searchPictureByPicture(@RequestBody SearchPictureByPictureRequest searchPictureByPictureRequest,

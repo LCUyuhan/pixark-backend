@@ -47,6 +47,10 @@ knife4j:
         api-rule: package
         api-rule-resources:
           - com.yeyuchunlan.pixarkbackend.controller
+# 游客浏览限制
+guest-picture:
+  view-limit: 30
+
 ## 对象存储配置（需要从腾讯云获取）
 #cos:
 #  client:

@@ -3,10 +3,10 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.yeyuchunlan</groupId>
-    <artifactId>yu-picture-backend</artifactId>
+    <artifactId>pixark-backend</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>yu-picture-backend</name>
-    <description>yu-picture-backend</description>
+    <name>pixark-backend</name>
+    <description>pixark-backend</description>
     <properties>
         <java.version>11</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -188,7 +188,7 @@
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <version>${spring-boot.version}</version>
                 <configuration>
-                    <mainClass>com.yeyuchunlan.yupicturebackend.YuPictureBackendApplication</mainClass>
+                    <mainClass>com.yeyuchunlan.pixarkbackend.PixArkBackendApplication</mainClass>
                     <skip>true</skip>
                 </configuration>
                 <executions>

@@ -13,7 +13,7 @@ spring:
     multipart:
       max-file-size: 5MB
   application:
-    name: yu-picture-backend
+    name: pixark-backend
   # 数据库配置
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -46,7 +46,7 @@ knife4j:
       default:
         api-rule: package
         api-rule-resources:
-          - com.yeyuchunlan.yupicturebackend.controller
+          - com.yeyuchunlan.pixarkbackend.controller
 ## 对象存储配置（需要从腾讯云获取）
 #cos:
 #  client:

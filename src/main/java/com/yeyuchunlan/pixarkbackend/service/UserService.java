@@ -28,6 +28,14 @@ public interface UserService extends IService<User> {
     long userRegister(String userAccount, String userPassword, String checkPassword);
 
     /**
+     * 删除账号行：账号墓碑化 + 逻辑删除。
+     * 只处理用户这一行，不负责空间/图片级联——级联编排见 UserDeletionManager
+     *
+     * @param userId 用户 id
+     */
+    void deleteUserAccount(long userId);
+
+    /**
      * 获取加密密码
      *
      * @param userPassword  用户密码

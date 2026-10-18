@@ -1,92 +1,113 @@
+# 全环境共用的配置。本机开发看 application-local.yml，服务器看 application-prod.yml
 server:
-  port: 8123
+  port: 8123  # 后端服务监听端口
   servlet:
-    context-path: /api
+    context-path: /api  # 所有接口地址的公共前缀
+    session:
+      cookie:
+        max-age: 30d  # 浏览器里 SESSION 这个 cookie 的有效期
+
+# 允许跨域访问的来源，多个用逗号分隔；留空表示不开放跨域（前端走同源代理，不需要跨域）
+cors:
+  allowed-origins:
+
 spring:
-  # session 配置
+  config:
+    # 本机配置放在项目根目录（不在 resources 里），不会被打进 jar；
+    # 文件内的 on-profile: local 保证只在 local profile 下生效，生产环境自动忽略
+    import: optional:file:./application-local.yml
+  application:
+    name: pixark-backend  # 应用名
+  # 下面这一组是本机默认值，服务器上由 application-prod.yml 覆盖
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver  # MySQL 驱动类
+    url: jdbc:mysql://localhost:3306/yu-picture  # 数据库地址和库名
+    username: root                               # 数据库账号
+    password: 123456                             # 数据库密码
+  redis:
+    database: 0      # 使用第几个 Redis 库（0~15）
+    host: 127.0.0.1  # Redis 地址，登录会话和各类缓存放这里
+    port: 6379       # Redis 端口
+    timeout: 5000    # 等 Redis 响应多久算超时（毫秒）
+  rabbitmq:
+    host: 127.0.0.1                    # 消息队列地址，以图搜图的任务先进队列
+    port: 5672                         # 队列端口（管理后台是 15672，不是这个）
+    username: ${RABBITMQ_USER:pixark}  # 队列账号，默认 pixark，可被环境变量覆盖
+    password: ${RABBITMQ_PASSWORD:}    # 队列密码，默认为空，需要由环境变量提供
+    listener:
+      simple:
+        concurrency: 1            # 消费队列任务的线程数
+        max-concurrency: 1        # 上面那个线程数允许自动扩到的上限
+        prefetch: 1               # 一次预取几条任务（键名只能叫 prefetch，写错不报错、静默退回 250）
+        acknowledge-mode: manual  # 任务处理完才向队列确认（改成 auto 也不报错，但重启会丢任务）
   session:
-    store-type: redis
-    # session 30 天过期
-    timeout: 2592000
-  # 上传文件大小限制
+    store-type: redis  # 登录会话存放在哪里
+    timeout: 30d       # 会话在 Redis 里的存活时间
   servlet:
     multipart:
-      max-file-size: 5MB
-  application:
-    name: pixark-backend
-  # 数据库配置
-  datasource:
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/yu-picture
-    username: root
-    password: 123456
-  # Redis 配置
-  redis:
-    database: 0
-    host: 127.0.0.1
-    port: 6379
-    timeout: 5000
+      max-file-size: 5MB     # 单个上传文件的大小上限
+      max-request-size: 6MB  # 整个请求体的上限，要 ≥ max-file-size 且与 Nginx 的 6m 对齐
+
 mybatis-plus:
   configuration:
-    map-underscore-to-camel-case: false
-    # 仅在开发环境开启日志
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    map-underscore-to-camel-case: false  # 是否把数据库下划线列名自动映射成驼峰字段名
   global-config:
     db-config:
-      logic-delete-field: isDelete # 全局逻辑删除的实体字段名
-      logic-delete-value: 1 # 逻辑已删除值（默认为 1）
-      logic-not-delete-value: 0 # 逻辑未删除值（默认为 0）
-# 接口文档配置
-knife4j:
-  enable: true
-  openapi:
-    title: "接口文档"
-    version: 1.0
-    group:
-      default:
-        api-rule: package
-        api-rule-resources:
-          - com.yeyuchunlan.pixarkbackend.controller
+      logic-delete-field: isDelete  # 逻辑删除字段名（删数据只改标记，不真删行）
+      logic-delete-value: 1         # 字段值等于几表示"已删除"
+      logic-not-delete-value: 0     # 字段值等于几表示"正常"
+
+# 对象存储（cos.client.*）没有全环境默认值，只在 local 和 prod 两份里配
+
+# 以图搜图（百度逆向）
+image-search:
+  default-provider: baidu  # 使用哪家图搜服务
+  max-retry: 3             # 一个任务失败后最多重试几次，用完进死信队列
+  task-ttl-minutes: 60     # 任务进度和结果在 Redis 里存多久
+  result-ttl-hours: 24     # 同一张图的搜索结果缓存多久，命中就不再爬
+  rate-per-minute: 2       # 单个用户每分钟最多提交几个任务，0 或负数为不限
+  failure-threshold: 3     # 连续失败几次后进入冷却
+  cooldown-seconds: 60     # 冷却持续多久，期间新任务被拒、队列任务暂停爬取
+
+# AI 图片编辑（阿里云百炼 万相）
+ai-image-edit:
+  enabled: true                                         # 功能总开关，关闭后相关接口直接拒绝
+  base-url: https://{workspaceId}.cn-beijing.maas.aliyuncs.com  # 百炼接入地址模板
+  model: wanx2.1-imageedit                              # 使用的模型名
+  allowed-functions:                                    # 允许前端调用的编辑功能白名单，取值见 AiImageEditFunctionEnum
+    - expand
+    - remove_watermark
+    - super_resolution
+    - colorization
+    - doodle
+    - stylization_all
+    - stylization_local
+    - description_edit
+    - description_edit_with_mask
+    - control_cartoon_feature
+  submit-rate-per-minute: 3     # 单用户每分钟最多提交几次，0 或负数为不限
+  max-concurrent-tasks: 2       # 全局同时处于"处理中"的任务数上限
+  task-max-running-minutes: 30  # 一个任务最长占用并发槽位多久，超时强制回收
+  task-ttl-hours: 23            # 任务记录在 Redis 里存多久
+
 # 游客浏览限制
 guest-picture:
-  view-limit: 30
+  view-limit: 30  # 未登录用户每次查询最多返回多少张图
 
-## 对象存储配置（需要从腾讯云获取）
-#cos:
-#  client:
-#    host: xxx
-#    secretId: xxx
-#    secretKey: xxx
-#    region: xxx
-#    bucket: xxx
+# 登录失败限流
+login-security:
+  account-fail-limit: 10   # 同一账号在窗口内最多允许失败几次，0 或负数为不限
+  ip-fail-limit: 30        # 同一 IP 在窗口内最多允许失败几次，0 或负数为不限
+  fail-window-minutes: 10  # 失败计数的窗口时长（分钟）
 
-## 以图搜图配置（只剩百度逆向一条链路；provider 留空即用这里的默认值）
-#image-search:
-#  default-provider: baidu
-
-## AI 图片编辑配置（阿里云百炼 万相通用图像编辑，仅华北2北京地域）
-## 百炼密钥只服务这一个功能，直接配在本段下；建议用环境变量 DASHSCOPE_API_KEY 注入
-#ai-image-edit:
-#  enabled: true
-#  api-key: ${DASHSCOPE_API_KEY:}
-#  workspace-id: xxx
-#  base-url: https://{workspaceId}.cn-beijing.maas.aliyuncs.com
-#  model: wanx2.1-imageedit
-#  allowed-functions:            # 逗号分隔或列表，可选值见 AiImageEditFunctionEnum（共 10 个功能）
-#    - expand
-#    - remove_watermark
-#    - super_resolution
-#    - colorization
-#    - doodle
-#    - stylization_all
-#    - stylization_local
-#    - description_edit
-#    - description_edit_with_mask
-#    - control_cartoon_feature
-#  watermark: false             # 是否在生成图右下角加「AI生成」标识，对外提供服务时建议开启
-#  submit-rate-per-minute: 3    # 单用户每分钟最多提交几次任务，<=0 表示不限流
-#  task-ttl-hours: 23               # 必须 <= 24，百炼任务与结果 URL 只保留 24 小时
-# 注：AI 编辑额度不在这里配，它是 user 表的 aiQuota 字段（持久余额，注册默认 10 次，管理员在用户管理里发放）
-
-
-
+# 接口文档
+knife4j:
+  enable: false  # 是否开放接口文档页面
+  openapi:
+    title: "接口文档"  # 文档页面标题
+    version: 1.0       # 文档页面显示的版本号
+    group:
+      default:
+        api-rule: package    # 按包名收集接口
+        api-rule-resources:  # 要收集哪些包下的接口
+          - com.yeyuchunlan.pixarkbackend.controller

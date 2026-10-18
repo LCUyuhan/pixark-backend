@@ -1,0 +1,116 @@
+name: pixark
+
+# 四个容器的日志都限死在 20m×5，否则 json 日志会无声无息吃掉系统盘
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: pixark-mysql
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: yu-picture
+    # 3.6G 的机器上，buffer pool 给 256M 足够；performance_schema 单独吃掉几百 M，个人项目关掉
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --innodb-buffer-pool-size=256M
+      - --performance-schema=OFF
+      - --max-connections=200
+    volumes:
+      - ./data/mysql:/var/lib/mysql
+    ports:
+      # 只绑 127.0.0.1：公网打不到 3306，你从本机通过 SSH 隧道连进来
+      - "127.0.0.1:3306:3306"
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    mem_limit: 900m
+    logging: *logging
+
+  redis:
+    image: redis:7-alpine
+    container_name: pixark-redis
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    # allkeys-lru：满了优先淘汰最久没用的 key。这里放的是 session（丢了重新登录）、
+    # 图搜结果缓存（丢了重新爬）和 AI 并发槽位（丢了有 task-max-running-minutes 兜底回收），
+    # 都能容忍淘汰；真正不能丢的 AI 额度在 MySQL 的 user.aiQuota 里
+    command:
+      - redis-server
+      - --requirepass
+      - ${REDIS_PASSWORD}
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+    volumes:
+      - ./data/redis:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    mem_limit: 320m
+    logging: *logging
+
+  rabbitmq:
+    image: rabbitmq:3.11-management
+    container_name: pixark-rabbitmq
+    restart: unless-stopped
+    # RabbitMQ 用"节点名"认数据目录。不固定 hostname，容器重建后节点名会变，
+    # 老队列会被当成另一个节点的数据、看起来全丢了
+    hostname: pixark-rabbit
+    environment:
+      TZ: Asia/Shanghai
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    volumes:
+      - ./data/rabbitmq:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+    # 内存高水位默认按宿主机 40% 算（≈1.4G），对这台机器太贪；限到 350m 后水位≈140m
+    mem_limit: 350m
+    logging: *logging
+
+  backend:
+    image: eclipse-temurin:11-jre
+    container_name: pixark-backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    # .env 的键名和 application-prod.yml 里的 ${} 占位符一一对应，只维护一份清单
+    env_file: .env
+    environment:
+      TZ: Asia/Shanghai
+      SPRING_PROFILES_ACTIVE: prod
+    ports:
+      # 只绑 127.0.0.1：对外唯一入口是宝塔的 Nginx，公网打不到 8123
+      - "127.0.0.1:8123:8123"
+    volumes:
+      - ./app/app.jar:/app/app.jar:ro
+    command: ["java", "-Xms256m", "-Xmx512m", "-jar", "/app/app.jar"]
+    mem_limit: 768m
+    logging: *logging

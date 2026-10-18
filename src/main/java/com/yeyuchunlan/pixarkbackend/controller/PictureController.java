@@ -1,10 +1,8 @@
 package com.yeyuchunlan.pixarkbackend.controller;
 
+import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.yeyuchunlan.pixarkbackend.annotation.AuthCheck;
-import com.yeyuchunlan.pixarkbackend.api.imagesearch.ImageSearchSelector;
-import com.yeyuchunlan.pixarkbackend.api.imagesearch.ImageSearchService;
-import com.yeyuchunlan.pixarkbackend.api.imagesearch.model.ImageSearchResult;
 import com.yeyuchunlan.pixarkbackend.common.BaseResponse;
 import com.yeyuchunlan.pixarkbackend.common.DeleteRequest;
 import com.yeyuchunlan.pixarkbackend.common.ResultUtils;
@@ -19,8 +17,10 @@ import com.yeyuchunlan.pixarkbackend.model.entity.Picture;
 import com.yeyuchunlan.pixarkbackend.model.entity.Space;
 import com.yeyuchunlan.pixarkbackend.model.entity.User;
 import com.yeyuchunlan.pixarkbackend.model.enums.PictureReviewStatusEnum;
+import com.yeyuchunlan.pixarkbackend.model.vo.picture.ImageSearchTaskVO;
 import com.yeyuchunlan.pixarkbackend.model.vo.picture.PictureTagCategory;
 import com.yeyuchunlan.pixarkbackend.model.vo.picture.PictureVO;
+import com.yeyuchunlan.pixarkbackend.service.ImageSearchTaskService;
 import com.yeyuchunlan.pixarkbackend.service.PictureService;
 import com.yeyuchunlan.pixarkbackend.service.SpaceService;
 import com.yeyuchunlan.pixarkbackend.service.UserService;
@@ -44,7 +44,7 @@ public class PictureController {
     @Resource
     private SpaceService spaceService;
     @Resource
-    private ImageSearchSelector imageSearchSelector;
+    private ImageSearchTaskService imageSearchTaskService;
     @Resource
     private PictureCacheManager pictureCacheManager;
     @Resource
@@ -204,7 +204,8 @@ public class PictureController {
     }
 
     /**
-     * 游客只能浏览公共图库的前 N 张（N 配在 guest-picture.view-limit）。
+     * 游客每次查询只能拿到公共图库的前 N 张（N 配在 guest-picture.view-limit）。
+     * 换筛选条件或排序会开启新的一次查询，额度随之重置。
      * 整页照常查询、照常进缓存，只在返回前裁 records，因此游客与登录用户共用同一条缓存；
      * 两个调用方拿到的都是新实例（缓存走反序列化、回源走新建），原地裁不会污染缓存。
      */
@@ -272,10 +273,14 @@ public class PictureController {
     @GetMapping("/tag_category")
     public BaseResponse<PictureTagCategory> listPictureTagCategory() {
         PictureTagCategory pictureTagCategory = new PictureTagCategory();
-        //目前写死
-        //todo动态获取热门标签和分类
-        List<String> tagList = Arrays.asList("热门", "搞笑", "生活", "高清", "艺术", "校园", "背景", "简历", "创意");
-        List<String> categoryList = Arrays.asList("风景", "游戏", "表情包", "素材", "海报");
+        // 静态字典：分类是表单里的闭选、也用于图墙筛选；标签是表单建议（允许自由输入）
+        List<String> tagList = Arrays.asList(
+                "壁纸", "头像", "海报", "高清",
+                "可爱", "清新", "极简", "复古", "胶片", "黑白",
+                "夜景", "城市", "海边", "氛围感", "治愈");
+        List<String> categoryList = Arrays.asList(
+                "风景", "人像", "动物", "建筑", "美食", "插画",
+                "动漫", "游戏", "表情包", "科技", "运动", "其他");
         pictureTagCategory.setTagList(tagList);
         pictureTagCategory.setCategoryList(categoryList);
         return ResultUtils.success(pictureTagCategory);
@@ -320,24 +325,29 @@ public class PictureController {
     }
 
     /**
-     * 以图搜图（从全网搜索图片）
+     * 创建以图搜图任务（异步入队，前端轮询 get_task 取结果）。
+     * 消费者并发度为 1，所以同一时刻只有一个任务在爬百度
      */
-    @PostMapping("/search/picture")
-    public BaseResponse<List<ImageSearchResult>> searchPictureByPicture(@RequestBody SearchPictureByPictureRequest searchPictureByPictureRequest,
-                                                                        HttpServletRequest request) {
+    @PostMapping("/search/create_task")
+    public BaseResponse<ImageSearchTaskVO> createImageSearchTask(@RequestBody SearchPictureByPictureRequest searchPictureByPictureRequest,
+                                                                HttpServletRequest request) {
         // 登录校验：任何已登录用户可调用（未登录 getLoginUser 抛 NOT_LOGIN）
-        userService.getLoginUser(request);
+        User loginUser = userService.getLoginUser(request);
         ThrowUtils.throwIf(searchPictureByPictureRequest == null, ErrorCode.PARAMS_ERROR);
-        Long pictureId = searchPictureByPictureRequest.getPictureId();
-        ThrowUtils.throwIf(pictureId == null || pictureId <= 0, ErrorCode.PARAMS_ERROR);
-        Picture oldPicture = pictureService.getById(pictureId);
-        ThrowUtils.throwIf(oldPicture == null, ErrorCode.NOT_FOUND_ERROR);
-        ImageSearchService imageSearchService = imageSearchSelector.pick(searchPictureByPictureRequest.getProvider());
-        String thumbnailUrl = oldPicture.getThumbnailUrl();
-        String searchUrl = (thumbnailUrl != null && !thumbnailUrl.trim().isEmpty())
-                ? thumbnailUrl : oldPicture.getUrl();
-        List<ImageSearchResult> resultList = imageSearchService.search(searchUrl);
-        return ResultUtils.success(resultList);
+        ImageSearchTaskVO taskVO = imageSearchTaskService.createTask(searchPictureByPictureRequest.getPictureId(),
+                searchPictureByPictureRequest.getProvider(), loginUser);
+        return ResultUtils.success(taskVO);
+    }
+
+    /**
+     * 查询以图搜图任务，仅提交人可查；结果只在 Redis 里保留 image-search.task-ttl-minutes 分钟
+     */
+    @GetMapping("/search/get_task")
+    public BaseResponse<ImageSearchTaskVO> getImageSearchTask(String taskId, HttpServletRequest request) {
+        ThrowUtils.throwIf(StrUtil.isBlank(taskId), ErrorCode.PARAMS_ERROR, "任务 id 不能为空");
+        User loginUser = userService.getLoginUser(request);
+        ImageSearchTaskVO taskVO = imageSearchTaskService.getTask(taskId, loginUser);
+        return ResultUtils.success(taskVO);
     }
 
     /**

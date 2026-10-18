@@ -54,10 +54,23 @@ public class AiImageEditProperties {
     private boolean watermark = false;
 
     /**
-     * 单用户每分钟最多可提交的任务数，防止脚本在一分钟内打光余额、也避免撞上模型服务自身的 QPS 限制。
-     * 配成 0 或负数表示不限流
+     * 单用户每分钟最多可提交的任务数。这是**频率闸**，挡的是脚本刷额度；
+     * 它管不了"同时有几个任务在跑"，那个由 maxConcurrentTasks 负责
+     * 配成 0 或负数表示不限
      */
     private int submitRatePerMinute = 3;
+
+    /**
+     * 全局同时处于"处理中"的任务数上限。百炼对 wanx2.1-imageedit 官方给的是并发 2、
+     * 任务下发 RPS 2，且主账号与 RAM 子账号共用 —— 这是整个 API Key 的额度，不是单用户的
+     */
+    private int maxConcurrentTasks = 2;
+
+    /**
+     * 一个任务最长占用并发槽位的分钟数，超过就强制回收。
+     * 没有这个兜底，进程在提交后崩溃会让槽位永久泄漏，最后 AI 编辑会彻底卡死在"人数已满"
+     */
+    private int taskMaxRunningMinutes = 30;
 
     /**
      * 任务记录在 Redis 中的存活小时数。必须小于等于 24，百炼的 task_id 与结果图片 URL 均只保留 24 小时

@@ -1,5 +1,6 @@
 package com.yeyuchunlan.pixarkbackend.service.impl;
 
+import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.http.HttpRequest;
 import cn.hutool.http.HttpResponse;
@@ -62,6 +63,11 @@ public class AiImageEditServiceImpl implements AiImageEditService {
      * 提交频率计数，按分钟分桶：{userId}:{分钟序号}
      */
     private static final String RATE_KEY_PREFIX = "pixark:aiEdit:rate:";
+
+    /**
+     * 全局并发槽位（ZSet）：member 是槽位 id，score 是占位时间戳
+     */
+    private static final String INFLIGHT_KEY = "pixark:aiEdit:inflight";
 
     /**
      * 任务失败已退还额度的标记位后缀，保证反复轮询同一个失败任务只退一次
@@ -173,11 +179,13 @@ public class AiImageEditServiceImpl implements AiImageEditService {
         // 6. 组装功能参数
         Map<String, Object> parameters = buildParameters(functionEnum, aiImageEditCreateRequest);
 
-        // 7. 先拦频率（不消耗额度），再原子扣减余额；下发失败退还
+        // 7. 先拦频率（不消耗额度），再原子扣减余额；占并发槽位与下发失败都退还
         Long userId = loginUser.getId();
         checkSubmitRate(userId);
         deductQuota(userId);
+        String slotId = null;
         try {
+            slotId = acquireSlot();
             AliyunImageEditRequest apiRequest = new AliyunImageEditRequest();
             apiRequest.setFunction(functionEnum.getValue());
             apiRequest.setPrompt(prompt);
@@ -189,15 +197,17 @@ public class AiImageEditServiceImpl implements AiImageEditService {
             if (StrUtil.isNotBlank(errorCode)) {
                 throw new BusinessException(ErrorCode.OPERATION_ERROR, toUserMessage(errorCode, createResult.getMessage()));
             }
-            // 8. 记录任务归属，后续轮询与保存都以它为准
+            // 8. 记录任务归属，后续轮询与保存都以它为准；slotId 用于任务到终态时释放并发槽
             JSONObject record = new JSONObject();
             record.set("userId", loginUser.getId());
             record.set("pictureId", picture.getId());
             record.set("function", functionEnum.getValue());
+            record.set("slotId", slotId);
             stringRedisTemplate.opsForValue().set(TASK_KEY_PREFIX + createResult.getTaskId(), record.toString(),
                     Duration.ofHours(Math.min(aiImageEditProperties.getTaskTtlHours(), ALIYUN_RESULT_KEEP_HOURS)));
             return toTaskVO(createResult.getTaskId(), createResult.getTaskStatus(), null, null);
         } catch (RuntimeException e) {
+            releaseSlot(slotId);
             refundQuota(userId);
             throw e;
         }
@@ -225,10 +235,13 @@ public class AiImageEditServiceImpl implements AiImageEditService {
             // 回写结果地址：保存时由服务端自己取，不接受前端传入
             record.set("resultUrl", imageUrl);
             rewriteTaskRecord(taskId, record);
+            // 出结果了，让出并发槽
+            releaseSlotOf(record);
         } else if (taskLevelFailure) {
             failReason = toUserMessage(queryResult.getCode(), queryResult.getMessage());
             // 任务级失败不产生费用，把占用的额度退回去；标记位保证反复轮询同一个失败任务只退一次
             refundQuotaOnce(taskId, loginUser.getId());
+            releaseSlotOf(record);
         } else if (StrUtil.isNotBlank(queryResult.getFailReason())) {
             // 任务成功但个别图片失败
             failReason = queryResult.getFailReason();
@@ -254,6 +267,7 @@ public class AiImageEditServiceImpl implements AiImageEditService {
             if (taskLevelFailure) {
                 // 用户不轮询直接点保存时，这是退还额度的唯一机会
                 refundQuotaOnce(taskId, loginUser.getId());
+                releaseSlotOf(record);
             }
             if (taskLevelFailure || StrUtil.isNotBlank(queryResult.getCode())) {
                 throw new BusinessException(ErrorCode.OPERATION_ERROR,
@@ -281,6 +295,8 @@ public class AiImageEditServiceImpl implements AiImageEditService {
         PictureVO pictureVO = pictureService.uploadPicture(resultUrl, uploadRequest, loginUser);
         // 结果已入库，百炼临时地址不再需要，删除记录防止重复保存重复扣额度
         stringRedisTemplate.delete(TASK_KEY_PREFIX + taskId);
+        // 槽位可能早在轮询到成功时就放掉了，ZREM 幂等，这里再放一次只是兜底
+        releaseSlotOf(record);
         log.info("AI 图片编辑结果保存成功, taskId = {}, pictureId = {}, replace = {}, userId = {}",
                 taskId, pictureVO.getId(), replace, loginUser.getId());
         return pictureVO;
@@ -539,6 +555,52 @@ public class AiImageEditServiceImpl implements AiImageEditService {
                 ? Duration.ofSeconds(remainSeconds)
                 : Duration.ofHours(Math.min(aiImageEditProperties.getTaskTtlHours(), ALIYUN_RESULT_KEEP_HOURS));
         stringRedisTemplate.opsForValue().set(key, record.toString(), ttl);
+    }
+
+    /**
+     * 占一个全局并发槽位。百炼对 wanx2.1-imageedit 只给 2 个并发，且整个 API Key 共用，
+     * 而"每分钟提交几次"这种频率闸挡不住"同时有 3 个任务在跑"，所以必须单独控。
+     * 用 ZSet 而不是计数器：成员带占位时间戳，进程崩溃没释放的槽位会随超时自动回收，不会永久卡死。
+     * 先占再校验、超了就退自己的 —— 并发下最坏是"多拒绝一个请求"，绝不会放行超过上限
+     *
+     * @return 槽位 id，交给任务记录保存；上限配成 0 时返回 null 表示不控
+     */
+    private String acquireSlot() {
+        int max = aiImageEditProperties.getMaxConcurrentTasks();
+        if (max <= 0) {
+            return null;
+        }
+        long now = System.currentTimeMillis();
+        long staleBefore = now - Duration.ofMinutes(aiImageEditProperties.getTaskMaxRunningMinutes()).toMillis();
+        stringRedisTemplate.opsForZSet().removeRange(INFLIGHT_KEY, 0, staleBefore);
+
+        String slotId = IdUtil.fastSimpleUUID();
+        stringRedisTemplate.opsForZSet().add(INFLIGHT_KEY, slotId, now);
+        // 键级兜底：只要还有活跃槽位就续期，全空时让它自己消失
+        stringRedisTemplate.expire(INFLIGHT_KEY, Duration.ofHours(ALIYUN_RESULT_KEEP_HOURS));
+
+        Long holding = stringRedisTemplate.opsForZSet().size(INFLIGHT_KEY);
+        if (holding != null && holding > max) {
+            releaseSlot(slotId);
+            throw new BusinessException(ErrorCode.OPERATION_ERROR,
+                    "当前 AI 编辑使用人数已满（同时最多 " + max + " 个任务），请稍后再试");
+        }
+        return slotId;
+    }
+
+    private void releaseSlot(String slotId) {
+        if (StrUtil.isNotBlank(slotId)) {
+            stringRedisTemplate.opsForZSet().remove(INFLIGHT_KEY, slotId);
+        }
+    }
+
+    /**
+     * 从任务记录里取槽位并释放。ZREM 幂等，反复轮询到终态也不会多放
+     */
+    private void releaseSlotOf(JSONObject record) {
+        if (record != null) {
+            releaseSlot(record.getStr("slotId"));
+        }
     }
 
     /**

@@ -11,11 +11,16 @@ import cn.hutool.json.JSONUtil;
  * （通过向百度发送 POST 请求，获取给定图片 URL 的相似图片页面地址。）
  */
 
-import cn.hutool.http.HttpUtil;
 import cn.hutool.json.JSONObject;
 
 
 public class GetImagePageUrlApi {
+
+    /**
+     * 下载与上传的超时上限。原来 upload 给的是 30 秒，太长：消费者只有一个线程，
+     * 任何一步挂住都会把整条队列堵死
+     */
+    private static final int TIMEOUT_MS = 10_000;
 
     /**
      * 通过图片 URL 上传到百度图片搜索
@@ -23,8 +28,8 @@ public class GetImagePageUrlApi {
      * @return 百度返回的 JSON 结果
      */
     public static String uploadImageByUrl(String imageUrl) {
-        // 下载图片
-        byte[] imageBytes = HttpUtil.downloadBytes(imageUrl);
+        // 下载图片（走 HttpRequest 才能带超时，HttpUtil.downloadBytes 没有超时入口）
+        byte[] imageBytes = HttpRequest.get(imageUrl).timeout(TIMEOUT_MS).execute().bodyBytes();
 
         // 上传到百度
         long uptime = System.currentTimeMillis();
@@ -44,7 +49,7 @@ public class GetImagePageUrlApi {
                 .form("tn", "pc")
                 .form("from", "pc")
                 .form("image_source", "PC_UPLOAD_URL")
-                .timeout(30000)
+                .timeout(TIMEOUT_MS)
                 .execute();
 
         JSONObject jsonObject = JSONUtil.parseObj(response.body());

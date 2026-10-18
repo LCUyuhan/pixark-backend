@@ -1,0 +1,25 @@
+# 服务器生产配置。值来自容器环境变量（服务器上 /opt/pixark/.env），所以本文件不写密钥
+spring:
+  datasource:
+    # 数据库地址。mysql 是 docker-compose 里的服务名，不是 127.0.0.1
+    url: jdbc:mysql://mysql:3306/yu-picture?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+    username: root                    # 数据库账号
+    password: ${MYSQL_ROOT_PASSWORD}  # 数据库密码，来自 .env
+  redis:
+    host: redis                  # Redis 地址（docker 服务名）
+    password: ${REDIS_PASSWORD}  # Redis 密码，来自 .env
+  rabbitmq:
+    host: rabbitmq  # 消息队列地址（docker 服务名）
+
+cos:
+  client:
+    host: ${COS_HOST}             # 图片 URL 的域名前缀
+    secretId: ${COS_SECRET_ID}    # COS 账号 ID
+    secretKey: ${COS_SECRET_KEY}  # COS 密钥
+    region: ${COS_REGION}         # 存储桶所在地域
+    bucket: ${COS_BUCKET}         # 存储桶名
+
+ai-image-edit:
+  api-key: ${DASHSCOPE_API_KEY}            # 百炼 API Key
+  workspace-id: ${DASHSCOPE_WORKSPACE_ID}  # 百炼业务空间 ID
+  watermark: true                          # 生成图是否加"AI生成"标识

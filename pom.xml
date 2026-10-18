@@ -115,10 +115,13 @@
                 </exclusion>
             </exclusions>
         </dependency>
-
-
-
-
+        <!-- 以图搜图接入 RabbitMQ 排队用（消费者串行，避免并发爬百度）。
+             版本由下方 import 的 spring-boot-dependencies BOM 统一管理，这里不要写 <version>，
+             否则会和 BOM 打架；实际解析出 spring-amqp/spring-rabbit 2.4.8 + amqp-client 5.14.2 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
     </dependencies>
     <dependencyManagement>
         <dependencies>
@@ -172,6 +175,15 @@
     </dependencyManagement>
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <!-- 本机配置含真实密钥，只用于本地开发，绝不进 jar -->
+                <excludes>
+                    <exclude>application-local.yml</exclude>
+                </excludes>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -189,7 +201,6 @@
                 <version>${spring-boot.version}</version>
                 <configuration>
                     <mainClass>com.yeyuchunlan.pixarkbackend.PixArkBackendApplication</mainClass>
-                    <skip>true</skip>
                 </configuration>
                 <executions>
                     <execution>

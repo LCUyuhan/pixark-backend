@@ -4,6 +4,8 @@ target/
 !**/src/test/**/target/
 ### Custom ###
 application-local.yml
+# 生产密钥只提交模板 deploy/.env.example，真值留在服务器上
+deploy/.env
 ### STS ###
 .apt_generated
 .classpath

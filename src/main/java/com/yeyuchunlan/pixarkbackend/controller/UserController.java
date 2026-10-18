@@ -13,6 +13,7 @@ import com.yeyuchunlan.pixarkbackend.exception.BusinessException;
 import com.yeyuchunlan.pixarkbackend.exception.ErrorCode;
 import com.yeyuchunlan.pixarkbackend.exception.ThrowUtils;
 import com.yeyuchunlan.pixarkbackend.manager.CosManager;
+import com.yeyuchunlan.pixarkbackend.manager.UserDeletionManager;
 import com.yeyuchunlan.pixarkbackend.model.dto.user.*;
 import com.yeyuchunlan.pixarkbackend.model.entity.User;
 import com.yeyuchunlan.pixarkbackend.model.vo.user.LoginUserVO;
@@ -36,6 +37,8 @@ public class UserController {
 
     @Resource
     private UserService userService;
+    @Resource
+    private UserDeletionManager userDeletionManager;
     @Resource
     private CosManager cosManager;
     @Resource
@@ -148,12 +151,13 @@ public class UserController {
      */
     @PostMapping("/delete")
     @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
-    public BaseResponse<Boolean> deleteUser(@RequestBody DeleteRequest deleteRequest) {
+    public BaseResponse<Boolean> deleteUser(@RequestBody DeleteRequest deleteRequest, HttpServletRequest request) {
         if (deleteRequest == null || deleteRequest.getId() == null || deleteRequest.getId() <= 0) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
-        boolean b = userService.removeById(deleteRequest.getId());
-        return ResultUtils.success(b);
+        User loginUser = userService.getLoginUser(request);
+        userDeletionManager.deleteUser(deleteRequest.getId(), loginUser);
+        return ResultUtils.success(true);
     }
 
     /**

@@ -13,7 +13,7 @@ import org.springframework.context.annotation.Configuration;
 public class GuestPictureProperties {
 
     /**
-     * 未登录用户最多能浏览的公共图片数量
+     * 未登录用户每次查询最多返回的公共图片数量
      */
     private long viewLimit = 30;
 }

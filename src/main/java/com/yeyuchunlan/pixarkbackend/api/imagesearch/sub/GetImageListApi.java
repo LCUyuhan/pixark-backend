@@ -19,6 +19,11 @@ import java.util.List;
 public class GetImageListApi {
 
     /**
+     * 单次请求超时上限
+     */
+    private static final int TIMEOUT_MS = 10_000;
+
+    /**
      * 获取图片列表
      *
      * @param url
@@ -26,8 +31,8 @@ public class GetImageListApi {
      */
     public static List<ImageSearchResult> getImageList(String url) {
         try {
-            // 发起GET请求
-            HttpResponse response = HttpUtil.createGet(url).execute();
+            // 发起GET请求（必须带超时：消费者单线程，挂住一次就把整条队列堵死）
+            HttpResponse response = HttpUtil.createGet(url).timeout(TIMEOUT_MS).execute();
 
             // 获取响应内容
             int statusCode = response.getStatus();

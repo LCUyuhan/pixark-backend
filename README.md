@@ -1,6 +1,6 @@
 # PixArk Backend
 
-PixArk 智能协同云图库的后端服务，提供用户、图片、空间、审核、AI 图片编辑、以图搜图和图库分析等接口。
+PixArk 云图库的后端服务，提供用户、图片、空间、审核、AI 图片编辑、以图搜图和图库分析等接口。
 
 技术栈：Java 11 + Spring Boot 2.7.6 + MyBatis-Plus 3.5.9 + MySQL 8 + Redis 7 + RabbitMQ 3.11 + 腾讯云 COS + 阿里云百炼。
 

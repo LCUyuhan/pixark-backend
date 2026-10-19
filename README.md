@@ -47,6 +47,13 @@ src/main/java/com/yeyuchunlan/pixarkbackend/
 
 ## 本地运行
 
+最短流程：
+
+1. 启动 MySQL、Redis、RabbitMQ
+2. 建库并执行 `sql/create_table.sql`
+3. 复制 `application-local.example.yml` 为 `application-local.yml`，填 MySQL、RabbitMQ、COS、百炼四组值
+4. 执行 `mvn spring-boot:run -Dspring-boot.run.profiles=local`
+
 ### 1. 环境要求
 
 - JDK 11
@@ -54,8 +61,8 @@ src/main/java/com/yeyuchunlan/pixarkbackend/
 - MySQL 8.0
 - Redis 7（本机默认 `127.0.0.1:6379`）
 - RabbitMQ 3.11（以图搜图功能需要）
-- 腾讯云 COS 桶（图片上传需要）
-- 阿里云百炼 API Key 与业务空间 ID（AI 编辑需要）
+- 腾讯云 COS 桶与密钥（当前代码启动时会初始化 COS 客户端，必须配置）
+- 阿里云百炼 API Key 与业务空间 ID（当前代码启动时会初始化百炼客户端，必须配置）
 
 ### 2. 初始化数据库
 
@@ -70,47 +77,29 @@ mysql -uroot -p pixark < sql/create_table.sql
 
 ### 3. 配置 `application-local.yml`
 
-在 `pixark-backend/` 根目录创建 `application-local.yml`（该文件已在 `.gitignore` 中，不会被提交）：
+仓库里提供了一个**只含占位符**的模板 `application-local.example.yml`。复制成 `application-local.yml` 后填写自己的值：
 
-```yaml
-spring:
-  config:
-    activate:
-      on-profile: local
-  datasource:
-    url: jdbc:mysql://localhost:3306/pixark?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
-    username: root
-    password: your-mysql-password
-  rabbitmq:
-    username: guest
-    password: guest
-
-mybatis-plus:
-  configuration:
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
-
-cos:
-  client:
-    host: https://your-bucket.cos.ap-beijing.myqcloud.com
-    secretId: your-cos-secret-id
-    secretKey: your-cos-secret-key
-    region: ap-beijing
-    bucket: your-bucket
-
-ai-image-edit:
-  api-key: your-dashscope-api-key
-  workspace-id: your-dashscope-workspace-id
-  watermark: true
-
-knife4j:
-  enable: true
+```bash
+cp application-local.example.yml application-local.yml
 ```
+
+`application-local.yml` 已在 `.gitignore` 中，不会被提交；模板文件本身可以提交。
+
+必须填写的配置：
+
+| 配置 | 说明 |
+| --- | --- |
+| `spring.datasource.password` | 本机 MySQL 密码 |
+| `spring.rabbitmq.username/password` | 本机 RabbitMQ 账号；默认 `guest/guest`，用项目容器时改成 `.env` 里的账号 |
+| `cos.client.host/secretId/secretKey/region/bucket` | 腾讯云 COS 的域名、密钥、地域和桶名 |
+| `ai-image-edit.api-key/workspace-id` | 阿里云百炼 API Key 和业务空间 ID |
 
 注意：
 
 - `application-local.yml` 必须放在 `pixark-backend/` 目录下，且运行时的 working directory 也是这个目录，`spring.config.import: optional:file:./application-local.yml` 才能找到它。
 - 文件里的 `on-profile: local` 表示只有激活 `local` profile 时才生效。
-- 不要把真实密钥写进 `application.yml` 或任何会被提交的文件；生产环境使用环境变量，见 `deploy/.env.example`。
+- **当前代码在启动时会构造 COS 和百炼客户端，所以这两组配置不能留空**；即使暂时不用图片上传或 AI 编辑，也要填真实值。若希望“没有云服务密钥也能启动”，需要改代码做条件装配，属于另一项改动。
+- 不要把真实密钥写进 `application.yml`、`application-local.example.yml` 或任何会被提交的文件；生产环境使用环境变量，见 `deploy/.env.example`。
 
 ### 4. 启动
 

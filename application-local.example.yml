@@ -1,0 +1,44 @@
+# 本地开发配置模板。
+# 使用方法：复制为 application-local.yml，再填写自己的值。
+# application-local.yml 已在 .gitignore 中，不会被提交；本文件只包含占位符。
+
+spring:
+  config:
+    activate:
+      on-profile: local
+  datasource:
+    url: jdbc:mysql://localhost:3306/pixark?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+    username: root
+    password: your-mysql-password
+  rabbitmq:
+    # 本机 RabbitMQ 默认账号；如果使用项目 deploy 里的容器，改成 .env 里的账号
+    username: guest
+    password: guest
+  # 本机 Redis 没有密码时不需要配置；有密码就取消注释并填写
+  # redis:
+  #   host: localhost
+  #   port: 6379
+  #   password: your-redis-password
+
+mybatis-plus:
+  configuration:
+    # 本地开发时打印 SQL；不想看日志就改成 org.apache.ibatis.logging.nologging.NoLoggingImpl
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+cos:
+  client:
+    # COS 域名、地域、桶名和密钥，必须填写
+    host: https://your-bucket.cos.ap-beijing.myqcloud.com
+    secretId: your-cos-secret-id
+    secretKey: your-cos-secret-key
+    region: ap-beijing
+    bucket: your-bucket
+
+ai-image-edit:
+  # 百炼密钥和业务空间 ID，必须填写；当前代码启动时会初始化客户端
+  api-key: your-dashscope-api-key
+  workspace-id: your-dashscope-workspace-id
+  watermark: true
+
+knife4j:
+  enable: true

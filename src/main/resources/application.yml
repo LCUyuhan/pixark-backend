@@ -21,7 +21,7 @@ spring:
   # 下面这一组是本机默认值，服务器上由 application-prod.yml 覆盖
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver  # MySQL 驱动类
-    url: jdbc:mysql://localhost:3306/yu-picture  # 数据库地址和库名
+    url: jdbc:mysql://localhost:3306/pixark  # 数据库地址和库名
     username: root                               # 数据库账号
     password: 123456                             # 数据库密码
   redis:

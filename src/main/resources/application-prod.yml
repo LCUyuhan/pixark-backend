@@ -2,7 +2,7 @@
 spring:
   datasource:
     # 数据库地址。mysql 是 docker-compose 里的服务名，不是 127.0.0.1
-    url: jdbc:mysql://mysql:3306/yu-picture?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+    url: jdbc:mysql://mysql:3306/pixark?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
     username: root                    # 数据库账号
     password: ${MYSQL_ROOT_PASSWORD}  # 数据库密码，来自 .env
   redis:

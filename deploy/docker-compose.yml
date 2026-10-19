@@ -15,7 +15,9 @@ services:
     environment:
       TZ: Asia/Shanghai
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: yu-picture
+      MYSQL_DATABASE: pixark
+      # 官方镜像默认只建 root@localhost；后端从另一个容器连过来必须放开
+      MYSQL_ROOT_HOST: "%"
     # 3.6G 的机器上，buffer pool 给 256M 足够；performance_schema 单独吃掉几百 M，个人项目关掉
     command:
       - --character-set-server=utf8mb4

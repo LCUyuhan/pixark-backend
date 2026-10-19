@@ -572,7 +572,7 @@ public class AiImageEditServiceImpl implements AiImageEditService {
         }
         long now = System.currentTimeMillis();
         long staleBefore = now - Duration.ofMinutes(aiImageEditProperties.getTaskMaxRunningMinutes()).toMillis();
-        stringRedisTemplate.opsForZSet().removeRange(INFLIGHT_KEY, 0, staleBefore);
+        stringRedisTemplate.opsForZSet().removeRangeByScore(INFLIGHT_KEY, 0.0, (double) staleBefore);
 
         String slotId = IdUtil.fastSimpleUUID();
         stringRedisTemplate.opsForZSet().add(INFLIGHT_KEY, slotId, now);
